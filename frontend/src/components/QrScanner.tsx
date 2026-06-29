@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 import type { CSSProperties } from 'react'
-import { Html5Qrcode } from 'html5-qrcode'
+import { BrowserQRCodeReader, type IScannerControls } from '@zxing/browser'
 
 interface Props {
   onScan: (url: string) => void
@@ -8,6 +8,7 @@ interface Props {
 }
 
 export default function QrScanner({ onScan, onClose }: Props) {
+  const videoRef = useRef<HTMLVideoElement>(null)
   const onScanRef = useRef(onScan)
   const onCloseRef = useRef(onClose)
 
@@ -17,40 +18,39 @@ export default function QrScanner({ onScan, onClose }: Props) {
   })
 
   useEffect(() => {
-    const scanner = new Html5Qrcode('qr-reader')
+    const reader = new BrowserQRCodeReader()
+    let controls: IScannerControls | null = null
     let active = true
 
-    // Small delay to let StrictMode's first-pass cleanup release the camera
-    // before the second pass tries to acquire it.
-    const timer = setTimeout(() => {
-      if (!active) return
-
-      scanner
-        .start(
-          { facingMode: 'environment' },
-          { fps: 10, qrbox: { width: 250, height: 250 } },
-          (decodedText) => {
-            if (!active) return
+    reader
+      .decodeFromConstraints(
+        { video: { facingMode: 'environment' } },
+        videoRef.current!,
+        (result) => {
+          if (result && active) {
             active = false
-            scanner.stop().then(() => onScanRef.current(decodedText)).catch(() => {})
-          },
-          () => {},
-        )
-        .catch(() => {
-          if (active) onCloseRef.current()
-        })
-    }, 50)
+            controls?.stop()
+            onScanRef.current(result.getText())
+          }
+        },
+      )
+      .then((c) => {
+        controls = c
+        if (!active) c.stop()
+      })
+      .catch(() => {
+        if (active) onCloseRef.current()
+      })
 
     return () => {
       active = false
-      clearTimeout(timer)
-      scanner.stop().catch(() => {})
+      controls?.stop()
     }
   }, [])
 
   return (
     <div style={styles.container}>
-      <div id="qr-reader" style={styles.reader} />
+      <video ref={videoRef} style={styles.video} />
       <button style={styles.cancelButton} onClick={onClose}>
         Cancelar
       </button>
@@ -67,9 +67,10 @@ const styles: Record<string, CSSProperties> = {
     padding: '16px',
     gap: '16px',
   },
-  reader: {
+  video: {
     width: '100%',
     maxWidth: '400px',
+    borderRadius: '8px',
   },
   cancelButton: {
     padding: '12px 32px',
