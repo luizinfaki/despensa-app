@@ -12,41 +12,45 @@ export default function QrScannerPhoto({ onScan, onClose }: Props) {
   const [error, setError] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
 
-  function handleFile(e: ChangeEvent<HTMLInputElement>) {
+  async function handleFile(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file) return
 
     setProcessing(true)
     setError('')
 
-    const objectUrl = URL.createObjectURL(file)
-    const img = new Image()
+    try {
+      // createImageBitmap is more reliable than HTMLImageElement on iOS Safari:
+      // respects EXIF rotation and is guaranteed decoded before canvas draw.
+      const bitmap = await createImageBitmap(file)
 
-    img.onload = () => {
-      URL.revokeObjectURL(objectUrl)
+      // Scale down to ≤1024px — iOS PWA canvas silently fails above ~16MP
+      const MAX = 1024
+      const scale = Math.min(1, MAX / bitmap.width, MAX / bitmap.height)
+      const w = Math.round(bitmap.width * scale)
+      const h = Math.round(bitmap.height * scale)
+
       const canvas = document.createElement('canvas')
-      canvas.width = img.width
-      canvas.height = img.height
+      canvas.width = w
+      canvas.height = h
       const ctx = canvas.getContext('2d')!
-      ctx.drawImage(img, 0, 0)
-      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
-      const code = jsQR(imageData.data, imageData.width, imageData.height)
-      setProcessing(false)
+      ctx.drawImage(bitmap, 0, 0, w, h)
+      bitmap.close()
+
+      const imageData = ctx.getImageData(0, 0, w, h)
+      const code = jsQR(imageData.data, w, h)
+
       if (code) {
         onScan(code.data)
       } else {
-        setError('QR Code não encontrado. Tente outra foto.')
+        setError(`QR Code não encontrado (canvas ${w}×${h}px). Tente mais perto.`)
         if (inputRef.current) inputRef.current.value = ''
       }
-    }
-
-    img.onerror = () => {
-      URL.revokeObjectURL(objectUrl)
+    } catch (err) {
+      setError(`Erro: ${err instanceof Error ? err.message : String(err)}`)
+    } finally {
       setProcessing(false)
-      setError('Erro ao processar a imagem.')
     }
-
-    img.src = objectUrl
   }
 
   return (
