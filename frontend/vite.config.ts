@@ -3,6 +3,12 @@ import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 
 export default defineConfig({
+  define: {
+    __APP_VERSION__: JSON.stringify(new Date().toISOString().slice(0, 16).replace('T', ' ')),
+  },
+  optimizeDeps: {
+    exclude: ['qr-scanner'],
+  },
   plugins: [
     react(),
     VitePWA({

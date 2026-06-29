@@ -1,16 +1,18 @@
 import { useState } from 'react'
 import type { CSSProperties } from 'react'
 import { supabase } from '../lib/supabase'
-import QrScanner from '../components/QrScanner'
+import QrScannerLive from '../components/QrScannerLive'
+import QrScannerPhoto from '../components/QrScannerPhoto'
 
+type ScanMode = 'live' | 'photo' | null
 type ScanResult = { ok: boolean; message: string } | null
 
 export default function HomePage() {
-  const [scanning, setScanning] = useState(false)
+  const [scanMode, setScanMode] = useState<ScanMode>(null)
   const [result, setResult] = useState<ScanResult>(null)
 
   async function handleScan(url: string) {
-    setScanning(false)
+    setScanMode(null)
     const { data } = await supabase.auth.getUser()
     if (!data.user) return
 
@@ -27,8 +29,11 @@ export default function HomePage() {
     }
   }
 
-  if (scanning) {
-    return <QrScanner onScan={handleScan} onClose={() => setScanning(false)} />
+  if (scanMode === 'live') {
+    return <QrScannerLive onScan={handleScan} onClose={() => setScanMode(null)} />
+  }
+  if (scanMode === 'photo') {
+    return <QrScannerPhoto onScan={handleScan} onClose={() => setScanMode(null)} />
   }
 
   return (
@@ -43,9 +48,16 @@ export default function HomePage() {
 
       <button
         style={styles.primaryButton}
-        onClick={() => { setResult(null); setScanning(true) }}
+        onClick={() => { setResult(null); setScanMode('live') }}
       >
-        Escanear Nota
+        Escanear (câmera ao vivo)
+      </button>
+
+      <button
+        style={{ ...styles.primaryButton, background: '#2563eb' }}
+        onClick={() => { setResult(null); setScanMode('photo') }}
+      >
+        Escanear (foto)
       </button>
 
       <button
@@ -54,6 +66,8 @@ export default function HomePage() {
       >
         Sair
       </button>
+
+      <p style={styles.version}>build {__APP_VERSION__}</p>
     </div>
   )
 }
@@ -97,5 +111,12 @@ const styles: Record<string, CSSProperties> = {
     fontSize: '14px',
     cursor: 'pointer',
     padding: '8px',
+  },
+  version: {
+    margin: 0,
+    marginTop: 'auto',
+    paddingTop: '24px',
+    fontSize: '11px',
+    color: '#d1d5db',
   },
 }
