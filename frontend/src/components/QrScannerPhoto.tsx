@@ -3,9 +3,9 @@ import type { CSSProperties, ChangeEvent } from 'react'
 import { supabase } from '../lib/supabase'
 
 interface NotaData {
-  qrcode_url: string | null
   cnpj: string | null
   nome_loja: string | null
+  chave_acesso: string | null
   itens: { nome: string; qtd: number; valor_unit: number; valor_total: number }[]
   total: number | null
   data_hora: string | null
@@ -16,23 +16,36 @@ interface Props {
   onClose: () => void
 }
 
+type State = 'input' | 'processing' | 'preview'
+
 export default function QrScannerPhoto({ onScan, onClose }: Props) {
-  const [processing, setProcessing] = useState(false)
-  const [error, setError] = useState('')
+  const [state, setState] = useState<State>('input')
+  const [file, setFile] = useState<File | null>(null)
+  const [qrUrl, setQrUrl] = useState('')
   const [nota, setNota] = useState<NotaData | null>(null)
+  const [error, setError] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
 
-  async function handleFile(e: ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    if (!file) return
-    if (inputRef.current) inputRef.current.value = ''
+  function handleFileChange(e: ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0]
+    if (f) setFile(f)
+  }
 
-    setProcessing(true)
+  async function handlePasteClipboard() {
+    try {
+      const text = await navigator.clipboard.readText()
+      if (text.startsWith('http')) setQrUrl(text.trim())
+    } catch {
+      // clipboard permission denied or not available
+    }
+  }
+
+  async function handleAnalyze() {
+    if (!file) return
+    setState('processing')
     setError('')
-    setNota(null)
 
     try {
-      // Resize to max 1600px and compress before sending to API
       const bitmap = await createImageBitmap(file)
       const MAX = 1600
       const scale = Math.min(1, MAX / bitmap.width, MAX / bitmap.height)
@@ -60,26 +73,46 @@ export default function QrScannerPhoto({ onScan, onClose }: Props) {
       if (!resp.ok) throw new Error(json.error ?? `HTTP ${resp.status}`)
 
       setNota(json as NotaData)
+      setState('preview')
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
-    } finally {
-      setProcessing(false)
+      setState('input')
     }
   }
 
-  // Preview state — show extracted data before saving
-  if (nota) {
-    const fmt = (n: number | null | undefined) =>
-      n != null ? `R$ ${n.toFixed(2).replace('.', ',')}` : '—'
+  function handleReset() {
+    setFile(null)
+    setNota(null)
+    setError('')
+    setState('input')
+    if (inputRef.current) inputRef.current.value = ''
+  }
 
+  const fmt = (n: number | null | undefined) =>
+    n != null ? `R$ ${n.toFixed(2).replace('.', ',')}` : '—'
+
+  // ── Estado 2: processing ──────────────────────────────────────────────────
+  if (state === 'processing') {
     return (
       <div style={styles.container}>
-        <p style={styles.previewTitle}>Nota identificada pela IA</p>
+        <p style={styles.hint}>Analisando com IA… aguarde alguns segundos</p>
+      </div>
+    )
+  }
+
+  // ── Estado 3: preview ─────────────────────────────────────────────────────
+  if (state === 'preview' && nota) {
+    return (
+      <div style={styles.container}>
+        <p style={styles.previewTitle}>Nota identificada</p>
 
         <div style={styles.card}>
           {nota.nome_loja && <p style={styles.storeName}>{nota.nome_loja}</p>}
           {nota.cnpj && <p style={styles.field}>CNPJ: {nota.cnpj}</p>}
           {nota.data_hora && <p style={styles.field}>Data: {nota.data_hora}</p>}
+          {nota.chave_acesso && (
+            <p style={styles.chave}>Chave: {nota.chave_acesso}</p>
+          )}
 
           {nota.itens.length > 0 && (
             <>
@@ -87,9 +120,7 @@ export default function QrScannerPhoto({ onScan, onClose }: Props) {
               <div style={styles.itemList}>
                 {nota.itens.map((item, i) => (
                   <div key={i} style={styles.itemRow}>
-                    <span style={styles.itemName}>
-                      {item.qtd}x {item.nome}
-                    </span>
+                    <span style={styles.itemName}>{item.qtd}x {item.nome}</span>
                     <span style={styles.itemPrice}>{fmt(item.valor_total)}</span>
                   </div>
                 ))}
@@ -101,30 +132,20 @@ export default function QrScannerPhoto({ onScan, onClose }: Props) {
             <p style={styles.totalRow}>Total: {fmt(nota.total)}</p>
           )}
 
-          <p style={nota.qrcode_url ? styles.qrOk : styles.qrMissing}>
-            {nota.qrcode_url ? 'QR Code lido com sucesso' : 'QR Code não identificado'}
-          </p>
+          {qrUrl && (
+            <p style={styles.qrOk}>URL do QR Code registrada</p>
+          )}
         </div>
 
-        <input
-          ref={inputRef}
-          type="file"
-          accept="image/*"
-          capture="environment"
-          style={{ display: 'none' }}
-          onChange={handleFile}
-        />
-
-        {nota.qrcode_url && (
-          <button style={styles.saveButton} onClick={() => onScan(nota.qrcode_url!)}>
-            Salvar nota
-          </button>
-        )}
-
         <button
-          style={styles.retryButton}
-          onClick={() => { setNota(null); setError(''); inputRef.current?.click() }}
+          style={{ ...styles.saveButton, opacity: qrUrl.trim() ? 1 : 0.4 }}
+          disabled={!qrUrl.trim()}
+          onClick={() => onScan(qrUrl.trim())}
         >
+          Salvar nota
+        </button>
+
+        <button style={styles.retryButton} onClick={handleReset}>
           Nova foto
         </button>
 
@@ -135,14 +156,10 @@ export default function QrScannerPhoto({ onScan, onClose }: Props) {
     )
   }
 
-  // Capture state
+  // ── Estado 1: input ───────────────────────────────────────────────────────
   return (
     <div style={styles.container}>
-      <p style={styles.hint}>
-        {processing
-          ? 'Analisando com IA… aguarde alguns segundos'
-          : 'Fotografe toda a nota fiscal (inclua o QR Code)'}
-      </p>
+      <p style={styles.hint}>Fotografe a nota e cole a URL do QR Code</p>
 
       <input
         ref={inputRef}
@@ -150,18 +167,35 @@ export default function QrScannerPhoto({ onScan, onClose }: Props) {
         accept="image/*"
         capture="environment"
         style={{ display: 'none' }}
-        onChange={handleFile}
+        onChange={handleFileChange}
       />
 
-      <button
-        style={{ ...styles.captureButton, opacity: processing ? 0.6 : 1 }}
-        disabled={processing}
-        onClick={() => inputRef.current?.click()}
-      >
-        {processing ? 'Analisando…' : 'Fotografar nota'}
+      <button style={styles.photoButton} onClick={() => inputRef.current?.click()}>
+        {file ? `Foto: ${file.name}` : 'Fotografar nota'}
       </button>
 
+      <div style={styles.urlRow}>
+        <input
+          type="url"
+          style={styles.urlInput}
+          placeholder="Cole aqui a URL do QR Code"
+          value={qrUrl}
+          onChange={e => setQrUrl(e.target.value)}
+        />
+        <button style={styles.pasteButton} onClick={handlePasteClipboard}>
+          Colar
+        </button>
+      </div>
+
       {error && <p style={styles.error}>{error}</p>}
+
+      <button
+        style={{ ...styles.analyzeButton, opacity: file ? 1 : 0.4 }}
+        disabled={!file}
+        onClick={handleAnalyze}
+      >
+        Analisar nota
+      </button>
 
       <button style={styles.cancelButton} onClick={onClose}>
         Cancelar
@@ -186,13 +220,55 @@ const styles: Record<string, CSSProperties> = {
     fontSize: '14px',
     textAlign: 'center',
   },
-  captureButton: {
+  photoButton: {
     width: '100%',
-    maxWidth: '360px',
-    padding: '18px',
-    fontSize: '18px',
+    maxWidth: '400px',
+    padding: '16px',
+    fontSize: '16px',
     fontWeight: '600',
     background: '#2563eb',
+    color: '#fff',
+    border: 'none',
+    borderRadius: '12px',
+    cursor: 'pointer',
+    textAlign: 'left',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+  },
+  urlRow: {
+    display: 'flex',
+    width: '100%',
+    maxWidth: '400px',
+    gap: '8px',
+  },
+  urlInput: {
+    flex: 1,
+    padding: '12px',
+    fontSize: '14px',
+    border: '1px solid #d1d5db',
+    borderRadius: '8px',
+    outline: 'none',
+    minWidth: 0,
+  },
+  pasteButton: {
+    padding: '12px 14px',
+    fontSize: '14px',
+    fontWeight: '600',
+    background: '#f3f4f6',
+    border: '1px solid #d1d5db',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    color: '#374151',
+    whiteSpace: 'nowrap',
+  },
+  analyzeButton: {
+    width: '100%',
+    maxWidth: '400px',
+    padding: '16px',
+    fontSize: '16px',
+    fontWeight: '600',
+    background: '#16a34a',
     color: '#fff',
     border: 'none',
     borderRadius: '12px',
@@ -213,7 +289,7 @@ const styles: Record<string, CSSProperties> = {
     cursor: 'pointer',
     padding: '8px',
   },
-  // Preview styles
+  // Preview
   previewTitle: {
     margin: 0,
     fontSize: '16px',
@@ -241,6 +317,13 @@ const styles: Record<string, CSSProperties> = {
     margin: 0,
     fontSize: '13px',
     color: '#6b7280',
+  },
+  chave: {
+    margin: 0,
+    fontSize: '11px',
+    color: '#9ca3af',
+    wordBreak: 'break-all',
+    fontFamily: 'monospace',
   },
   sectionLabel: {
     margin: '8px 0 4px',
@@ -284,11 +367,6 @@ const styles: Record<string, CSSProperties> = {
     fontSize: '13px',
     color: '#16a34a',
     fontWeight: '600',
-  },
-  qrMissing: {
-    margin: '4px 0 0',
-    fontSize: '13px',
-    color: '#dc2626',
   },
   saveButton: {
     width: '100%',

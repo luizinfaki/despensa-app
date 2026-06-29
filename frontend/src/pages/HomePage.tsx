@@ -1,18 +1,16 @@
 import { useState } from 'react'
 import type { CSSProperties } from 'react'
 import { supabase } from '../lib/supabase'
-import QrScannerLive from '../components/QrScannerLive'
 import QrScannerPhoto from '../components/QrScannerPhoto'
 
-type ScanMode = 'live' | 'photo' | null
 type ScanResult = { ok: boolean; message: string } | null
 
 export default function HomePage() {
-  const [scanMode, setScanMode] = useState<ScanMode>(null)
+  const [scanning, setScanning] = useState(false)
   const [result, setResult] = useState<ScanResult>(null)
 
   async function handleScan(url: string) {
-    setScanMode(null)
+    setScanning(false)
     const { data } = await supabase.auth.getUser()
     if (!data.user) return
 
@@ -29,11 +27,8 @@ export default function HomePage() {
     }
   }
 
-  if (scanMode === 'live') {
-    return <QrScannerLive onScan={handleScan} onClose={() => setScanMode(null)} />
-  }
-  if (scanMode === 'photo') {
-    return <QrScannerPhoto onScan={handleScan} onClose={() => setScanMode(null)} />
+  if (scanning) {
+    return <QrScannerPhoto onScan={handleScan} onClose={() => setScanning(false)} />
   }
 
   return (
@@ -48,22 +43,12 @@ export default function HomePage() {
 
       <button
         style={styles.primaryButton}
-        onClick={() => { setResult(null); setScanMode('live') }}
+        onClick={() => { setResult(null); setScanning(true) }}
       >
-        Escanear (câmera ao vivo)
+        Registrar nota
       </button>
 
-      <button
-        style={{ ...styles.primaryButton, background: '#2563eb' }}
-        onClick={() => { setResult(null); setScanMode('photo') }}
-      >
-        Escanear (foto)
-      </button>
-
-      <button
-        style={styles.secondaryButton}
-        onClick={() => supabase.auth.signOut()}
-      >
+      <button style={styles.secondaryButton} onClick={() => supabase.auth.signOut()}>
         Sair
       </button>
 
