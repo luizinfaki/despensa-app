@@ -9,14 +9,26 @@ export default function HomePage() {
   const [scanning, setScanning] = useState(false)
   const [result, setResult] = useState<ScanResult>(null)
 
+  function extrairChave(url: string): string | null {
+    try {
+      const p = new URL(url).searchParams.get('p')
+      const chave = p?.split('|')[0] ?? null
+      return chave?.length === 44 ? chave : null
+    } catch {
+      return null
+    }
+  }
+
   async function handleScan(url: string) {
     setScanning(false)
     const { data } = await supabase.auth.getUser()
     if (!data.user) return
 
+    const chave_acesso = extrairChave(url)
+
     const { error } = await supabase
       .from('notas_fiscais')
-      .insert({ url_sefaz: url, user_id: data.user.id, status: 'PENDENTE' })
+      .insert({ url_sefaz: url, chave_acesso, user_id: data.user.id, status: 'PENDENTE' })
 
     if (!error) {
       setResult({ ok: true, message: 'Nota salva com sucesso!' })
