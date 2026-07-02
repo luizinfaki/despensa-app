@@ -60,10 +60,6 @@ export default function HomePage() {
         Registrar nota
       </button>
 
-      <button style={styles.secondaryButton} onClick={() => supabase.auth.signOut()}>
-        Sair
-      </button>
-
       <p style={styles.version}>build {__APP_VERSION__}</p>
     </div>
   )
