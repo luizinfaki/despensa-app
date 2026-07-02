@@ -11,6 +11,7 @@ type Nota = {
   valor_total_nota: number | null
   nome_emitente: string | null
   cnpj_emitente: string | null
+  url_sefaz: string | null
   mercados: { nome_fantasia: string; descricao: string | null } | null
 }
 
@@ -39,7 +40,7 @@ export default function FilaNotasPage() {
   useEffect(() => {
     supabase
       .from('notas_fiscais')
-      .select('id, status, data_escaneamento, data_emissao, valor_total_nota, nome_emitente, cnpj_emitente, mercados(nome_fantasia, descricao)')
+      .select('id, status, data_escaneamento, data_emissao, valor_total_nota, nome_emitente, cnpj_emitente, url_sefaz, mercados(nome_fantasia, descricao)')
       .in('status', ['PENDENTE', 'AGUARDANDO_VALIDACAO'])
       .order('data_escaneamento', { ascending: false })
       .then(({ data }) => {
@@ -77,6 +78,17 @@ export default function FilaNotasPage() {
               <span style={styles.valor}>{formatValor(nota.valor_total_nota)}</span>
             </div>
             {aguardando && <span style={styles.hint}>Toque para validar →</span>}
+            {!aguardando && nota.url_sefaz && (
+              <a
+                href={nota.url_sefaz}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={styles.urlLink}
+                onClick={e => e.stopPropagation()}
+              >
+                Abrir nota na SEFAZ →
+              </a>
+            )}
           </div>
         )
       })}
@@ -157,5 +169,11 @@ const styles: Record<string, CSSProperties> = {
   hint: {
     fontSize: '12px',
     color: '#16a34a',
+  },
+  urlLink: {
+    fontSize: '12px',
+    color: '#2563eb',
+    textDecoration: 'none',
+    alignSelf: 'flex-start',
   },
 }

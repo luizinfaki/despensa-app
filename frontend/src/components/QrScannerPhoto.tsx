@@ -190,11 +190,11 @@ export default function QrScannerPhoto({ onScan, onClose }: Props) {
       {error && <p style={styles.error}>{error}</p>}
 
       <button
-        style={{ ...styles.analyzeButton, opacity: file ? 1 : 0.4 }}
-        disabled={!file}
-        onClick={handleAnalyze}
+        style={{ ...styles.analyzeButton, opacity: file || qrUrl.trim() ? 1 : 0.4 }}
+        disabled={!file && !qrUrl.trim()}
+        onClick={file ? handleAnalyze : () => onScan(qrUrl.trim())}
       >
-        Analisar nota
+        {file ? 'Analisar nota' : 'Salvar nota'}
       </button>
 
       <button style={styles.cancelButton} onClick={onClose}>
