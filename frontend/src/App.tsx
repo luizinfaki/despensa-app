@@ -6,6 +6,7 @@ import LoginPage from './pages/LoginPage'
 import HomePage from './pages/HomePage'
 import FilaNotasPage from './pages/FilaNotasPage'
 import ValidacaoNotaPage from './pages/ValidacaoNotaPage'
+import ComprasPage from './pages/ComprasPage'
 import NavBar from './components/NavBar'
 
 export default function App() {
@@ -43,6 +44,7 @@ export default function App() {
           <Route path="/" element={<HomePage />} />
           <Route path="/notas" element={<FilaNotasPage />} />
           <Route path="/notas/:id" element={<ValidacaoNotaPage />} />
+          <Route path="/compras" element={<ComprasPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </div>

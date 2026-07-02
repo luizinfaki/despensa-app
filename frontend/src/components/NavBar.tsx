@@ -11,6 +11,9 @@ export default function NavBar() {
       <NavLink to="/notas" style={({ isActive }) => ({ ...styles.link, ...(isActive ? styles.active : {}) })}>
         Notas
       </NavLink>
+      <NavLink to="/compras" style={({ isActive }) => ({ ...styles.link, ...(isActive ? styles.active : {}) })}>
+        Compras
+      </NavLink>
       <button style={styles.sair} onClick={() => supabase.auth.signOut()}>
         Sair
       </button>
