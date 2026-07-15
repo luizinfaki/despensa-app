@@ -18,7 +18,7 @@ Extraia todas as informações visíveis e retorne SOMENTE o JSON abaixo, sem te
 }
 
 A chave de acesso tem 44 dígitos divididos em grupos de 4, impressa próximo ao QR code ou código de barras.
-Retorne APENAS o JSON, sem explicações adicionais.`
+Retorne APENAS o JSON, sem explicações adicionais, em uma única linha e sem espaços/indentação desnecessários.`
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).end()
@@ -33,7 +33,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const message = await client.messages.create({
       model: 'claude-haiku-4-5-20251001',
-      max_tokens: 1024,
+      max_tokens: 4096,
       messages: [
         {
           role: 'user',
@@ -56,7 +56,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const match = text.match(/\{[\s\S]*\}/)
     if (!match) return res.status(422).json({ error: 'Não foi possível extrair dados da imagem' })
 
-    return res.json(JSON.parse(match[0]))
+    try {
+      return res.json(JSON.parse(match[0]))
+    } catch {
+      console.error('decode-qr: resposta da IA não é um JSON válido:', text)
+      return res.status(422).json({ error: 'Não foi possível interpretar a nota — tente novamente ou tire uma foto com menos itens visíveis por vez' })
+    }
   } catch (err) {
     console.error('decode-qr error:', err)
     return res.status(500).json({ error: err instanceof Error ? err.message : String(err) })
