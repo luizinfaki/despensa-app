@@ -1,202 +1,191 @@
 # Documento de Requisitos do Produto (PRD)
 
-## Projeto: Gestor de Suprimentos Domésticos (App de Compras)
+## Projeto: Despensa — Gestor de Compras Domésticas
 
 ---
 
 ### 1. Visão Geral do Produto
 
-Uma aplicação web pessoal desenvolvida como **PWA (Progressive Web App)**, projetada para o registro prático e gestão de compras de supermercado e suprimentos domésticos. O foco central está na centralização do histórico de compras para controle financeiro individual e identificação de variações de preços entre mercados. O sistema utiliza uma arquitetura assíncrona inteligente (Celular ➔ Computador ➔ Servidor) para captura de notas fiscais (NFC-e SEFAZ-ES), transpondo barreiras de CAPTCHA/Cloudflare sem a necessidade de digitação manual obrigatória ou custos excessivos com IA.
+Uma aplicação web pessoal desenvolvida como **PWA (Progressive Web App)**, projetada para o registro prático e gestão de compras de supermercado e suprimentos domésticos. O foco central está na centralização do histórico de compras para controle financeiro individual e identificação de variações de preços entre mercados. O sistema utiliza uma arquitetura assíncrona (Celular → Computador → Servidor) para captura de notas fiscais (NFC-e SEFAZ-ES), transpondo barreiras de CAPTCHA/Cloudflare sem digitação manual.
 
 #### 1.1 Objetivos Principais
 
-- **Acompanhar Gastos Mensais com Mercado:** Oferecer clareza absoluta sobre o montante gasto por mês com suprimentos, permitindo definir e monitorar um orçamento doméstico.
-- **Identificar "Ralos de Dinheiro" (Itens Mais Gastos):** Descobrir quais os produtos específicos que consomem a maior fatia do orçamento no mês ou no ano através de rankings detalhados.
-- **Monitorar Variação de Valor entre Mercados:** Saber exatamente qual o estabelecimento que cobra o valor mais barato por um item frequente com base no histórico de compras.
-- **Calcular a Inflação Pessoal:** Acompanhar o crescimento real do preço de itens isolados ao longo do tempo através de gráficos históricos.
+- **Acompanhar gastos mensais:** clareza sobre o montante gasto por mês com suprimentos.
+- **Identificar itens de maior gasto:** descobrir quais produtos consomem a maior fatia do orçamento.
+- **Monitorar variação de preço entre mercados:** saber qual estabelecimento cobra menos por um item frequente.
+- **Calcular inflação pessoal:** acompanhar o crescimento real do preço de itens ao longo do tempo.
 
 ---
 
 ### 2. Personas e Casos de Uso
 
-- **Usuário Único (Gestor do Lar):** Utiliza o iPhone na rua para registros rápidos e o Computador em casa para gestão pesada e relatórios. Deseja inteligência de dados, mas exige um processo de entrada rápido e recusa-se a cadastrar manualmente marca por marca ou item por item.
+- **Usuário Único (Gestor do Lar):** usa o iPhone na rua para registros rápidos e o computador em casa para processamento de notas. Exige processo de entrada rápido e recusa cadastro manual item a item.
 
 ---
 
-### 3. Modelo de Dados e Fluxos de Entrada
+### 3. Fluxo de Captura da Nota Fiscal
 
-#### 3.1 A Estrutura de Cadastro (3 Níveis)
-
-Para viabilizar relatórios de inflação sem duplicar itens por causa de marcas diferentes, os produtos são estruturados em:
-
-1. **Agrupador Geral (O que o produto é essencialmente):** Ex: `Café Moído`, `Detergente Líquido`. (Nível onde roda o cálculo de variação de preço).
-2. **Item / Especificação Comercial (Marca e Peso/Volume):** Ex: `Pilão Intenso 500g`, `Ypê Coco 500ml`.
-3. **Tags (Categorização ampla):** Ex: `["Alimentação", "Matinal"]`, `["Limpeza"]`.
-
-#### 3.2 Fluxo Assíncrono de Captura da Nota Fiscal (Bypass Cloudflare)
-
-1. **Passo 1 (No Mercado via PWA Mobile):** O usuário aponta a câmera do iPhone para o QR Code da nota fiscal. O PWA decodifica a URL da SEFAZ e envia para o backend, criando um registro na tabela `notas_fiscais` com status `'PENDENTE'`.
-2. **Passo 2 (Em Casa via Computador):** Na interface Desktop, o usuário acessa a fila de "Notas Pendentes" e clica em processar. O sistema abre a URL da SEFAZ num navegador local. O usuário (humano) resolve o Turnstile/Captcha do Cloudflare se necessário.
-3. **Passo 3 (Extração Client-side):** Uma vez carregada a página com a tabela de produtos da SEFAZ, um script injetado no cliente (Bookmarklet) raspa o HTML limpo, extrai os dados estruturados (Nome bruto, Qtd, Valor Unitário, Valor Total) e envia via POST para a API do backend. A nota transita para `AGUARDANDO_VALIDACAO`.
-
-#### 3.3 Separação de Notas e Compras
-
-A tabela de `notas_fiscais` é desacoplada da tabela de `compras`. Uma compra pode nascer a partir do processamento bem-sucedido de uma nota fiscal ou ser introduzida de forma 100% manual (ex: compras em feiras ou mercados sem NFC-e). No fluxo manual, a nota vai diretamente de `PENDENTE` para `CONFIRMADO`, sem passar por `AGUARDANDO_VALIDACAO`.
-
-#### 3.4 Regras de Negócio Específicas
-
-- **Mapeamento Inteligente com IA Cacheável:** Quando um nome de produto bruto é inédito, o backend aciona a IA para determinar o *Agrupador Geral*, a *Marca*, o *Peso/Volume* e as *Tags*. O resultado é salvo na tabela de cache (`mapeamento_produtos`). Se o item for comprado novamente no futuro, o sistema reutiliza o mapeamento histórico, ignorando a IA (custo zero).
-- **Arquivamento de Notas:** Notas com erros crônicos ou leituras incorretas podem ser alteradas para o status `'ARQUIVADO'`, sumindo da fila de processamento sem apagar o histórico de tentativa.
-- **Gestão de Mercados Dinâmica:** Na nota, o mercado é identificado unicamente pelo CNPJ. No lançamento manual, o usuário digita o nome do mercado e o sistema exibe em tempo real os mercados já cadastrados que correspondam à busca, permitindo a seleção de um existente ou o cadastro de um novo caso não haja correspondência.
-- **Idempotência:** A URL da SEFAZ ou a chave de acesso de 44 dígitos possui restrição de unicidade (`UNIQUE`). O re-escaneamento acidental de uma nota é bloqueado pelo banco.
+1. **No mercado (PWA mobile):** aponta a câmera para o QR Code da nota. O PWA decodifica a URL da SEFAZ, extrai a chave de acesso de 44 dígitos e cria um registro em `notas_fiscais` com status `PENDENTE`.
+2. **Em casa (computador):** acessa a fila de notas pendentes, abre a URL da SEFAZ no navegador e resolve o Turnstile/Captcha manualmente se necessário.
+3. **Extração via bookmarklet:** com a página carregada, o bookmarklet raspa o HTML, extrai os dados estruturados (emitente, CNPJ, itens com nome bruto, quantidade, valores) e envia via POST para o backend. A nota transita para `AGUARDANDO_VALIDACAO`.
+4. **Validação (PWA desktop ou mobile):** o usuário abre a nota na fila, visualiza todos os itens com sugestões da IA, edita se necessário e confirma. A nota vai para `CONFIRMADO` e a compra é efetivada no banco.
 
 ---
 
-### 4. Interface e Navegação
+### 4. Modelo de Dados (Implementado)
 
-#### 4.1 Tela Inicial (Home) - Focada em Ação e Produtividade
+O schema real difere do modelo inicial do PRD — é mais normalizado.
 
-Interface minimalista focada no ecossistema mobile (iPhone):
+#### 4.1 Tabelas
 
-- Botão principal de grande dimensão: **"Registrar Compra"** (Leva ao fluxo de lançamento manual com seleção de mercado).
-- Botão de gatilho nativo: **"Escanear Nota"** (Abre a câmera HTML5 para leitura do QR Code).
-- Bloco informativo secundário: Link para a fila de **Histórico de Compras / Notas Pendentes**.
-- Mini Dashboard Financeiro: Exibição numérica simples do **Gasto Consolidado do Mês Atual** com indicador visual de progresso em relação ao orçamento mensal definido, funcionando como termômetro de orçamento.
+**`notas_fiscais`**
+- `id`, `user_id`, `url_sefaz` (UNIQUE), `chave_acesso` (VARCHAR 44), `numero_nf`
+- `status`: `PENDENTE` → `AGUARDANDO_VALIDACAO` → `CONFIRMADO` | `ARQUIVADO`
+- `data_escaneamento`, `data_emissao`, `data_processamento`
+- `nome_emitente`, `cnpj_emitente`, `valor_total_nota`
+- `itens_brutos` (JSONB) — preenchido pelo bookmarklet, zerado após confirmação
+- `mercado_id` (FK → mercados)
 
-#### 4.2 Área de Análises (Relatórios)
+**`mercados`**
+- `id`, `user_id`, `cnpj` (UNIQUE por user), `nome_fantasia`, `descricao`
 
-Menu dedicado, desenvolvido de forma totalmente responsiva (visível com gráficos adaptados tanto no celular quanto na tela grande do computador), englobando:
+**`tipos_item`** *(agrupador geral — ex: "Café Moído", "Carne Bovina")*
+- `id`, `user_id`, `nome` (UNIQUE por user)
 
-- **Módulo de Evolução de Preços:** Seleciona-se um *Agrupador Geral* (ex: Café Moído) e visualiza-se um gráfico de linhas contendo a flutuação de preço dele ao longo dos meses, independente da marca comprada.
-- **Módulo Top 10 Gastos:** Gráfico de barras/pizza listando os itens específicos que mais consumiram capital no período filtrado.
+**`produtos`** *(especificação comercial — tipo + marca + peso/volume)*
+- `id`, `user_id`, `tipo_id` (FK → tipos_item), `marca`, `peso_volume`, `unidade`
 
----
+**`tags`**
+- `id`, `user_id`, `nome` (UNIQUE por user)
 
-### 5. Arquitetura de Dados e Estrutura do Banco
+**`produto_tags`** *(junction)*
+- `produto_id`, `tag_id`
 
-O banco de dados relacional (Supabase / PostgreSQL) é projetado com restrições e chaves estrangeiras claras para manter a consistência financeira.
+**`mapeamento_produtos`** *(memória da aplicação: nome bruto → produto)*
+- `id`, `user_id`, `nome_bruto` (UNIQUE por user), `produto_id` (FK → produtos), `unidade`
 
-```
-       ┌─────────────────┐             ┌──────────────┐
-       │  notas_fiscais  │0..1        1│   mercados   │
-       └────────┬────────┘             └──────┬───────┘
-                │1                            │1
-                │ (id_nota)                   │ (id_mercado)
-                ▼                             ▼
-       ┌─────────────────┐             ┌──────────────────┐
-       │     compras     │1───────────N│ itens_comprados  │
-       └─────────────────┘             └──────┬───────────┘
-                                              │N
-                                              │ (id_mapeamento)
-                                              ▼
-                                       ┌──────────────────────┐
-                                       │  mapeamento_produtos  │
-                                       └──────────────────────┘
+**`compras`**
+- `id`, `user_id`, `nota_id` (FK → notas_fiscais, UNIQUE), `mercado_id`
+- `data_compra`, `valor_total_nota`, `valor_total_calculado`, `tipo_registro` (`AUTOMATICO_NF` | `MANUAL`)
 
-                                       ┌──────────────────────┐
-                                       │   orcamento_mensal   │
-                                       └──────────────────────┘
-```
+**`itens_comprados`**
+- `id`, `compra_id` (FK → compras), `mapeamento_id` (FK → mapeamento_produtos)
+- `quantidade`, `valor_unitario`, `valor_total_item`
 
-#### 5.1 Dicionário de Tabelas
+**`orcamento_mensal`**
+- `id`, `user_id`, `mes_ano` (VARCHAR, ex: `"2026-06"`), `valor_limite`
 
-**1. Tabela: `notas_fiscais`**
-- `id` (SERIAL, Primary Key)
-- `user_id` (INTEGER, Foreign Key → auth.users)
-- `url_sefaz` (TEXT, UNIQUE) — URL do QR Code.
-- `numero_nf` (VARCHAR, Nullable) — Número do documento.
-- `status` (VARCHAR) — Estados possíveis:
-  - `PENDENTE` — Nota escaneada no celular, aguardando abertura no computador.
-  - `AGUARDANDO_VALIDACAO` — SEFAZ lida pelo scraper, itens extraídos e mapeados pela IA, aguardando confirmação humana.
-  - `CONFIRMADO` — Compra validada e efetivada no banco. Estado final.
-  - `ARQUIVADO` — Nota com erro crônico ou inválida, removida da fila sem apagar o histórico.
-- `data_escaneamento` (TIMESTAMP, Default: NOW()) — Momento em que o QR Code foi lido no celular.
-- `data_processamento` (TIMESTAMP, Nullable) — Momento em que a nota transitou para `CONFIRMADO`.
+#### 4.2 Regras de Negócio
 
-**2. Tabela: `compras`**
-- `id` (SERIAL, Primary Key)
-- `user_id` (INTEGER, Foreign Key → auth.users)
-- `id_nota` (INTEGER, Foreign Key → notas_fiscais, UNIQUE, Nullable)
-- `id_mercado` (INTEGER, Foreign Key → mercados)
-- `data_compra` (DATE)
-- `valor_total_nota` (DECIMAL) — Valor total importado diretamente da nota fiscal ou informado manualmente. Representa o que foi efetivamente pago.
-- `valor_total_calculado` (DECIMAL, Gerado) — Campo derivado: soma automática dos `valor_total_item` de todos os `itens_comprados` vinculados. Permite detectar divergências em relação ao `valor_total_nota` (ex: descontos no caixa, arredondamentos).
-- `tipo_registro` (VARCHAR) — `['AUTOMATICO_NF', 'MANUAL']`
-
-**3. Tabela: `mercados`**
-- `id` (SERIAL, Primary Key)
-- `user_id` (INTEGER, Foreign Key → auth.users)
-- `cnpj` (VARCHAR, UNIQUE, Nullable) — Preenchido apenas via extração de nota.
-- `nome_fantasia` (VARCHAR)
-
-**4. Tabela: `mapeamento_produtos`** *(A Memória da Aplicação)*
-- `id` (SERIAL, Primary Key)
-- `user_id` (INTEGER, Foreign Key → auth.users)
-- `nome_bruto_nota` (VARCHAR, UNIQUE) — Ex: `"CAFÉ PILAO 500G ARÁBICO"`
-- `agrupador_geral` (VARCHAR) — Ex: `"Café Moído"`
-- `marca` (VARCHAR, Nullable) — Ex: `"Pilão"`
-- `peso_volume` (VARCHAR, Nullable) — Ex: `"500g"`
-- `tags` (TEXT[], Nullable) — Ex: `["Alimentação", "Matinal"]`
-
-**5. Tabela: `itens_comprados`**
-- `id` (SERIAL, Primary Key)
-- `id_compra` (INTEGER, Foreign Key → compras, On Delete Cascade)
-- `id_mapeamento` (INTEGER, Foreign Key → mapeamento_produtos)
-- `valor_unitario` (DECIMAL)
-- `quantidade` (DECIMAL)
-- `valor_total_item` (DECIMAL)
-
-**6. Tabela: `orcamento_mensal`**
-- `id` (SERIAL, Primary Key)
-- `user_id` (INTEGER, Foreign Key → auth.users)
-- `mes_ano` (VARCHAR) — Ex: `"2025-07"`
-- `valor_limite` (DECIMAL) — Orçamento definido para o mês. Usado como referência no termômetro da Home.
+- **Mapeamento cacheável:** nome bruto inédito → IA classifica → salvo em `mapeamento_produtos`. Compras futuras do mesmo item reutilizam o cache sem custo de IA.
+- **Idempotência:** re-escaneamento bloqueado por UNIQUE na `chave_acesso`.
+- **Amarração nota↔bookmarklet:** feita pela chave de acesso de 44 dígitos (presente na URL do QR code e na página SEFAZ).
 
 ---
 
-### 6. Riscos e Mitigações
+### 5. Interface e Navegação
 
-**Risco: A IA classificar incorretamente um item inédito.**
-- **Mitigação — Validação Humana com Confirmação Intermediária:** Após o processamento da nota no Computador, o frontend exibirá uma lista com as classificações sugeridas pela IA para itens inéditos. O usuário valida ou edita na tela antes de efetivar o commit no banco. O banco memoriza a correção. Este é o momento em que a nota transita de `AGUARDANDO_VALIDACAO` para `CONFIRMADO`.
+#### NavBar (sempre visível quando autenticado)
+- **Início** → `/`
+- **Notas** → `/notas`
+- **Compras** → `/compras`
+- Botão **Sair**
 
-**Risco: O usuário perceber, após o commit, que um mapeamento foi salvo incorretamente.**
-- **Mitigação — Tela de Gestão de Mapeamentos:** O sistema disponibiliza uma interface dedicada (acessível pelo menu) para listar, buscar e editar todos os registros da tabela `mapeamento_produtos`. Ao corrigir um agrupador, marca ou tags de um item já salvo, os relatórios passam a refletir a correção retroativamente em todas as compras que referenciam aquele mapeamento, sem necessidade de reprocessamento manual.
+#### Tela Inicial — `/` (Home)
+- Gasto total do mês atual (soma dos `valor_total_calculado` das compras do mês)
+- Botão principal: **"Escanear nota"**
+- Atalho para notas pendentes (se houver notas com status PENDENTE ou AGUARDANDO_VALIDACAO)
+- Top 3 categorias do mês (tipos_item com maior gasto)
 
-**Risco: Mudança repentina no HTML do portal da SEFAZ quebrando o script de raspagem.**
-- **Mitigação — Fallback de colagem de texto bruto (Ctrl+A):** Se o script falhar, o sistema apresentará um campo de texto livre. O usuário copia todo o conteúdo textual da página da SEFAZ, cola no app, e o backend utiliza a IA temporariamente para reestruturar os dados brutos até que o script seja atualizado.
+#### Fila de Notas — `/notas`
+- Lista de notas com status PENDENTE ou AGUARDANDO_VALIDACAO
+- Cards com: mercado, data, valor total, badge de status
+- Notas AGUARDANDO_VALIDACAO são clicáveis → tela de validação
 
-**Risco: Falta de sinal ou internet móvel dentro do supermercado.**
-- **Mitigação — Fila Offline com LocalStorage:** O PWA em React armazenará localmente os links dos QR Codes escaneados caso não haja rede, efetuando o sincronismo automático com o Supabase assim que a conexão for restabelecida.
+#### Validação de Nota — `/notas/:id`
+- Cabeçalho: mercado, data, valor total
+- Lista de itens: nome bruto, quantidade, valor
+- Cada item exibe sugestão da IA (tipo, marca, peso, tags) ou mapeamento existente (✓)
+- Campos editáveis por item; botão "Confirmar compra" confirma tudo junto
+
+#### Compras — `/compras`
+- Seletor de mês (navegação anterior/próximo)
+- Total gasto no mês selecionado
+- Lista de compras do mês (mercado, data, valor)
+- Detalhe de compra: itens com quantidade, valor unitário, valor total e breakdown por categoria
 
 ---
 
-### 7. Diretrizes de Implementação
+### 6. Arquitetura Técnica
 
-> ⚠️ **ATENÇÃO, AGENTE DE IA / CLAUDE CODE:** As diretrizes técnicas listadas abaixo são restrições mandatórias de desenvolvimento. Siga-as rigorosamente na geração dos arquivos e códigos.
+- **`/frontend`** — React + Vite PWA. Supabase anon key + sessão do usuário (RLS filtra automaticamente).
+- **`/backend`** — Node.js + Fastify. Supabase service role key (bypassa RLS). Bearer token fixo para autenticação do bookmarklet.
+- **`/scraper`** — Bookmarklet JavaScript executado no navegador desktop na página SEFAZ.
 
-#### 7.1 Estrutura de Arquitetura (Padrão Monorepo)
+**Variáveis de ambiente:**
+- Backend: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `API_TOKEN`, `ANTHROPIC_API_KEY`, `PORT`
+- Frontend: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_BACKEND_URL`, `VITE_API_TOKEN`
 
-Separe o código estritamente nas seguintes pastas de raiz do diretório:
+---
 
-- `/frontend` — Aplicação React + Vite configurada como Progressive Web App (PWA).
-- `/backend` — API REST construída em Node.js utilizando o framework Fastify.
-- `/scraper` — Script/Bookmarklet isolado em JavaScript para execução no client-side do navegador desktop.
+### 7. Sprints
 
-#### 7.2 Isolamento de Segurança (Supabase RLS)
+#### ✅ Sprint 1 — PWA com câmera e escaneamento de QR Code
+- PWA funcional com câmera HTML5
+- Decodificação da URL do QR Code via IA (Claude Sonnet)
+- Extração da chave de acesso de 44 dígitos da URL
+- Salvamento em `notas_fiscais` com status PENDENTE
+- Autenticação via Supabase (login com email/senha)
 
-Todas as tabelas do banco de dados descritas na seção 5 possuem obrigatoriamente uma coluna `user_id` referenciando `auth.users(id)` do Supabase. Ative o Row Level Security (RLS) em todas elas, limitando as políticas de SELECT, INSERT, UPDATE e DELETE ao contexto de usuário autenticado (`auth.uid() = user_id`).
+#### ✅ Sprint 2 — Schema do banco
+- Todas as tabelas criadas com RLS
+- Migration em `backend/migrations/001_schema.sql`
 
-#### 7.3 Gerenciamento de Credenciais (.env)
+#### ✅ Sprint 3 — Backend Fastify
+- `POST /notas/processar-scrape` — recebe dados do bookmarklet, upserta mercado, atualiza nota para AGUARDANDO_VALIDACAO
+- `POST /produtos/mapear` — classifica item via Claude Haiku, retorna tipo/marca/peso/unidade/tags
+- `POST /notas/:id/confirmar` — upserta tipos/produtos/mapeamentos/tags, cria compra e itens_comprados, fecha nota como CONFIRMADO
+- `GET /health`
 
-Não escreva credenciais diretas no código (hardcoding). No backend utilize `process.env` para mapear `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` e chaves de API de LLMs. No frontend utilize o prefixo padrão do Vite (`import.meta.env.VITE_...`).
+#### ✅ Sprint 4 — Bookmarklet SEFAZ-ES
+- Extrai: emitente, CNPJ, número NF, chave de acesso, data, valor total, todos os itens (nome, código, unidade, quantidade, valores)
+- Preview modal antes de enviar
+- Build script com substituição de placeholders e minificação
 
-#### 7.4 Estratégia de Codificação Incremental (Sprints)
+#### ✅ Sprint 5 — Fila de notas e validação
+- React Router com rotas protegidas por sessão
+- NavBar com Início/Notas/Sair
+- `FilaNotasPage` — lista notas pendentes
+- `ValidacaoNotaPage` — verifica cache de mapeamentos, chama IA para itens novos em paralelo, campos editáveis, confirmação
 
-Não execute a aplicação inteira de uma só vez. Siga o roteiro em Sprints modulares:
+#### 🔲 Sprint 6 — Home reformulada + tela de Compras
+- Home com gasto do mês, atalho para pendentes, top 3 categorias
+- `/compras` com navegação por mês, lista de compras e detalhe com breakdown por categoria
 
-1. **Sprint 1:** PWA funcional com câmera ativa, leitura de QR Code e salvamento da URL no Supabase. Validar o fluxo mobile de ponta a ponta antes de qualquer outra coisa.
-2. **Sprint 2:** Schema completo do banco de dados com RLS e migrations.
-3. **Sprint 3:** Backend Fastify — rotas de autenticação, endpoint de importação e pipeline de mapeamento com IA.
-4. **Sprint 4:** Scraper/Bookmarklet isolado para extração do portal SEFAZ.
-5. **Sprint 5:** Frontend desktop — fila de notas pendentes e tela de validação de mapeamentos.
-6. **Sprint 6:** Relatórios e tela de gestão de mapeamentos.
+#### 🔲 Sprint 7 — Gestão de mapeamentos
+- Tela para listar, buscar e editar registros de `mapeamento_produtos`
+- Correção retroativa: editar um mapeamento reflete em todas as compras vinculadas
+
+#### 🔲 Backlog (sem sprint definido)
+- Orçamento mensal: cadastro de `orcamento_mensal` + barra de progresso na Home
+- Lançamento manual de compra (sem nota fiscal)
+- Fila offline com LocalStorage (sincronismo automático ao reconectar)
+- Fallback de colagem de texto bruto caso o bookmarklet falhe
+- Variação de preço por produto ao longo do tempo
+- Comparativo de preços entre mercados
+
+---
+
+### 8. Riscos e Mitigações
+
+**IA classificar incorretamente um item inédito.**
+Mitigação: validação humana antes do commit. O usuário edita na tela de validação. O banco memoriza a correção.
+
+**Mapeamento salvo incorretamente após o commit.**
+Mitigação: Sprint 7 — tela de gestão de mapeamentos com edição retroativa.
+
+**Mudança no HTML do portal SEFAZ quebrando o bookmarklet.**
+Mitigação (backlog): fallback de colagem de texto bruto com reprocessamento via IA.
+
+**Sem sinal no mercado.**
+Mitigação (backlog): fila offline com LocalStorage.
