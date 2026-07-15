@@ -16,6 +16,7 @@ type ItemDetalhe = {
   quantidade: number
   valor_unitario: number
   valor_total_item: number
+  nome_bruto: string | null
   mapeamento_produtos: {
     nome_bruto: string
     produtos: {
@@ -56,12 +57,16 @@ function intervaloDeMes(year: number, month: number) {
 function agruparPorCategoria(itens: ItemDetalhe[]): GrupoCategoria[] {
   const map: Record<string, GrupoCategoria> = {}
   for (const item of itens) {
-    const categoria = item.mapeamento_produtos?.produtos?.tipos_item?.nome ?? '(sem categoria)'
+    const avulso = !item.mapeamento_produtos
+    const categoria = avulso
+      ? 'Avulso'
+      : item.mapeamento_produtos?.produtos?.tipos_item?.nome ?? '(sem categoria)'
     const p = item.mapeamento_produtos?.produtos
+    const nomeBruto = item.mapeamento_produtos?.nome_bruto ?? item.nome_bruto ?? '—'
     const partes = [p?.marca, p?.peso_volume].filter(Boolean)
-    const descricao = partes.length > 0
-      ? `${item.mapeamento_produtos?.nome_bruto} (${partes.join(' ')})`
-      : item.mapeamento_produtos?.nome_bruto ?? '—'
+    const descricao = avulso
+      ? nomeBruto
+      : partes.length > 0 ? `${nomeBruto} (${partes.join(' ')})` : nomeBruto
 
     if (!map[categoria]) {
       map[categoria] = { nome: categoria, subtotal: 0, itens: [] }
@@ -113,7 +118,7 @@ export default function ComprasPage() {
     setLoadingDetalhe(true)
     const { data } = await supabase
       .from('itens_comprados')
-      .select('quantidade, valor_unitario, valor_total_item, mapeamento_produtos(nome_bruto, produtos(marca, peso_volume, tipos_item(nome)))')
+      .select('quantidade, valor_unitario, valor_total_item, nome_bruto, mapeamento_produtos(nome_bruto, produtos(marca, peso_volume, tipos_item(nome)))')
       .eq('compra_id', id)
 
     const grupos = agruparPorCategoria((data as unknown as ItemDetalhe[]) ?? [])

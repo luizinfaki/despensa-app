@@ -1,0 +1,45 @@
+{
+  "manifest_version": 2,
+  "name": "Despensa — Scraper NFC-e",
+  "version": "1.0",
+  "description": "Extrai NFC-e do portal SEFAZ-ES e envia para o Despensa.",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "despensa-scraper@local",
+      "strict_min_version": "109.0"
+    }
+  },
+  "permissions": [
+    "storage",
+    "clipboardWrite",
+    "<all_urls>",
+    "*://app.sefaz.es.gov.br/*",
+    "*://sefaz.es.gov.br/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["*://app.sefaz.es.gov.br/ConsultaNFCe/qrcode.aspx*"],
+      "js": ["content/qrcode-app.js"],
+      "run_at": "document_start"
+    },
+    {
+      "matches": ["*://sefaz.es.gov.br/nfce/qrcode*"],
+      "js": ["content/qrcode-sefaz.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["*://app.sefaz.es.gov.br/ConsultaNFCe/ConsultaDANFE_NFCe.aspx*"],
+      "js": ["content/danfe.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["*://app.sefaz.es.gov.br/ConsultaNFCe/Principal*"],
+      "js": ["content/principal.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "options_ui": {
+    "page": "options/options.html",
+    "open_in_tab": false
+  }
+}

@@ -24,6 +24,7 @@ type ItemValidacao = ItemBruto & {
   ja_mapeado: boolean
   editando: boolean
   carregando: boolean
+  avulso: boolean
 }
 
 type Nota = {
@@ -73,6 +74,15 @@ export default function ValidacaoNotaPage() {
   const [itens, setItens] = useState<ItemValidacao[]>([])
   const [enviando, setEnviando] = useState(false)
   const [erro, setErro] = useState('')
+  const [tiposDisponiveis, setTiposDisponiveis] = useState<string[]>([])
+  const [dropdownIdx, setDropdownIdx] = useState<number | null>(null)
+  const [hoveredTipo, setHoveredTipo] = useState<string | null>(null)
+
+  useEffect(() => {
+    supabase.from('tipos_item').select('nome').order('nome').then(({ data }) => {
+      setTiposDisponiveis((data ?? []).map((t: any) => t.nome))
+    })
+  }, [])
 
   useEffect(() => {
     supabase
@@ -88,7 +98,7 @@ export default function ValidacaoNotaPage() {
         const iniciais: ItemValidacao[] = brutos.map(b => ({
           ...b,
           tipo: '', marca: '', peso_volume: '', unidade_mapeada: b.unidade, tags: [],
-          ja_mapeado: false, editando: false, carregando: true,
+          ja_mapeado: false, editando: false, carregando: true, avulso: false,
         }))
         setItens(iniciais)
 
@@ -105,8 +115,17 @@ export default function ValidacaoNotaPage() {
       })
   }, [id])
 
+  const CAMPOS_SYNC: (keyof ItemValidacao)[] = ['tipo', 'marca', 'peso_volume', 'unidade_mapeada', 'tags', 'avulso']
+
   function atualizar(i: number, campo: keyof ItemValidacao, valor: string | string[] | boolean) {
-    setItens(prev => prev.map((item, idx) => idx === i ? { ...item, [campo]: valor } : item))
+    const nomeBruto = itens[i]?.nome_bruto
+    if (CAMPOS_SYNC.includes(campo) && nomeBruto) {
+      setItens(prev => prev.map(item =>
+        item.nome_bruto === nomeBruto ? { ...item, [campo]: valor } : item
+      ))
+    } else {
+      setItens(prev => prev.map((item, idx) => idx === i ? { ...item, [campo]: valor } : item))
+    }
   }
 
   async function confirmar() {
@@ -115,17 +134,26 @@ export default function ValidacaoNotaPage() {
     setErro('')
 
     const payload = {
-      itens: itens.map(item => ({
-        nome_bruto: item.nome_bruto,
-        tipo: item.tipo,
-        marca: item.marca,
-        peso_volume: item.peso_volume,
-        unidade: item.unidade_mapeada || item.unidade,
-        tags: item.tags,
-        quantidade: item.quantidade,
-        valor_unitario: item.valor_unitario,
-        valor_total: item.valor_total,
-      }))
+      itens: itens.map(item => item.avulso
+        ? {
+            nome_bruto: item.nome_bruto,
+            avulso: true,
+            quantidade: item.quantidade,
+            valor_unitario: item.valor_unitario,
+            valor_total: item.valor_total,
+          }
+        : {
+            nome_bruto: item.nome_bruto,
+            tipo: item.tipo,
+            marca: item.marca,
+            peso_volume: item.peso_volume,
+            unidade: item.unidade_mapeada || item.unidade,
+            tags: item.tags,
+            quantidade: item.quantidade,
+            valor_unitario: item.valor_unitario,
+            valor_total: item.valor_total,
+          }
+      )
     }
 
     const res = await fetch(`${API_URL}/notas/${nota.id}/confirmar`, {
@@ -148,7 +176,7 @@ export default function ValidacaoNotaPage() {
   const mercado = nota.mercados?.descricao ?? nota.mercados?.nome_fantasia ?? nota.nome_emitente ?? '—'
   const data = nota.data_emissao ? new Date(nota.data_emissao).toLocaleDateString('pt-BR') : '—'
   const total = nota.valor_total_nota?.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) ?? '—'
-  const todosOk = itens.every(i => !i.carregando && i.tipo.trim())
+  const todosOk = itens.every(i => !i.carregando && (i.avulso || i.tipo.trim()))
 
   return (
     <div style={styles.container}>
@@ -162,15 +190,28 @@ export default function ValidacaoNotaPage() {
 
       <div style={styles.lista}>
         {itens.map((item, i) => (
-          <div key={item.nome_bruto + i} style={styles.card}>
+          <div key={item.nome_bruto + i} style={item.avulso ? { ...styles.card, ...styles.cardAvulso } : styles.card}>
             <div style={styles.cardTopo}>
               <span style={styles.nomeBruto}>{item.nome_bruto}</span>
-              <span style={styles.qtdValor}>
-                {item.quantidade} {item.unidade} · {item.valor_total.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-              </span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+                <span style={styles.qtdValor}>
+                  {item.quantidade} {item.unidade} · {item.valor_total.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                </span>
+                <button
+                  style={item.avulso ? { ...styles.iconAvulso, ...styles.iconAvulsoAtivo } : styles.iconAvulso}
+                  onClick={() => atualizar(i, 'avulso', !item.avulso)}
+                  title={item.avulso ? 'Desfazer avulso' : 'Marcar como avulso'}
+                >
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/>
+                    <line x1="7" y1="7" x2="7.01" y2="7"/>
+                    {item.avulso && <line x1="3" y1="3" x2="21" y2="21"/>}
+                  </svg>
+                </button>
+              </div>
             </div>
 
-            {item.carregando ? (
+            {!item.avulso && (item.carregando ? (
               <span style={styles.classificando}>Classificando...</span>
             ) : !item.editando ? (
               <div style={styles.mapeamentoRow} onClick={() => atualizar(i, 'editando', true)}>
@@ -186,7 +227,36 @@ export default function ValidacaoNotaPage() {
             ) : (
               <div style={styles.form}>
                 <label style={styles.label}>Tipo *</label>
-                <input style={styles.input} value={item.tipo} onChange={e => atualizar(i, 'tipo', e.target.value)} placeholder="ex: Café Moído" />
+                <div style={{ position: 'relative' }}>
+                  <input
+                    style={styles.input}
+                    value={item.tipo}
+                    onChange={e => atualizar(i, 'tipo', e.target.value)}
+                    onFocus={() => setDropdownIdx(i)}
+                    onBlur={() => setTimeout(() => setDropdownIdx(null), 150)}
+                    placeholder="ex: Café Moído"
+                  />
+                  {dropdownIdx === i && (() => {
+                    const filtrados = tiposDisponiveis.filter(t =>
+                      t.toLowerCase().includes(item.tipo.toLowerCase().trim()) && t !== item.tipo
+                    )
+                    return filtrados.length > 0 ? (
+                      <div style={styles.dropdown}>
+                        {filtrados.map(t => (
+                          <div
+                            key={t}
+                            style={{ ...styles.dropdownItem, background: hoveredTipo === t ? '#f3f4f6' : '#fff' }}
+                            onMouseDown={() => { atualizar(i, 'tipo', t); setDropdownIdx(null) }}
+                            onMouseEnter={() => setHoveredTipo(t)}
+                            onMouseLeave={() => setHoveredTipo(null)}
+                          >
+                            {t}
+                          </div>
+                        ))}
+                      </div>
+                    ) : null
+                  })()}
+                </div>
                 <label style={styles.label}>Marca</label>
                 <input style={styles.input} value={item.marca} onChange={e => atualizar(i, 'marca', e.target.value)} placeholder="ex: Pilão" />
                 <label style={styles.label}>Peso/Volume</label>
@@ -200,7 +270,7 @@ export default function ValidacaoNotaPage() {
                 />
                 <button style={styles.btnOk} onClick={() => atualizar(i, 'editando', false)}>OK</button>
               </div>
-            )}
+            ))}
           </div>
         ))}
       </div>
@@ -242,4 +312,9 @@ const styles: Record<string, CSSProperties> = {
   btnOk: { alignSelf: 'flex-end', background: '#16a34a', color: '#fff', border: 'none', padding: '6px 16px', borderRadius: '6px', cursor: 'pointer', fontSize: '13px' },
   btnConfirmar: { background: '#16a34a', color: '#fff', border: 'none', padding: '16px', borderRadius: '12px', fontSize: '16px', fontWeight: '600', cursor: 'pointer', width: '100%' },
   erro: { color: '#dc2626', fontSize: '14px', textAlign: 'center' },
+  cardAvulso: { background: '#fffbeb', border: '1px solid #fcd34d' },
+  iconAvulso: { background: 'none', border: 'none', cursor: 'pointer', padding: '2px', color: '#d1d5db', display: 'flex', alignItems: 'center', borderRadius: '4px' },
+  iconAvulsoAtivo: { color: '#d97706' },
+  dropdown: { position: 'absolute', top: '100%', left: 0, right: 0, background: '#fff', border: '1px solid #d1d5db', borderRadius: '6px', boxShadow: '0 4px 12px rgba(0,0,0,.1)', zIndex: 100, maxHeight: '180px', overflowY: 'auto', marginTop: '2px' },
+  dropdownItem: { padding: '8px 12px', fontSize: '14px', color: '#374151', cursor: 'pointer' },
 }

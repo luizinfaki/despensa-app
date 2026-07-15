@@ -84,6 +84,80 @@ export default async function notasRoutes(fastify) {
     return { ok: true, id_nota: nota.id }
   })
 
+  fastify.post('/notas/:id/processar-foto', async (req, reply) => {
+    const auth = req.headers.authorization || ''
+    if (auth !== `Bearer ${process.env.API_TOKEN}`) {
+      return reply.code(401).send({ error: 'Token inválido' })
+    }
+
+    const notaId = Number(req.params.id)
+    const { cnpj, nome_loja, itens, total, data_hora } = req.body
+
+    if (!itens?.length) {
+      return reply.code(400).send({ error: 'itens é obrigatório' })
+    }
+
+    const supabase = getSupabase()
+
+    const { data: nota, error: errNota } = await supabase
+      .from('notas_fiscais')
+      .select('id, user_id, status')
+      .eq('id', notaId)
+      .single()
+
+    if (errNota || !nota) {
+      return reply.code(404).send({ error: 'Nota não encontrada' })
+    }
+
+    if (nota.status !== 'PENDENTE') {
+      return reply.code(409).send({ error: `Nota já processada (status: ${nota.status})` })
+    }
+
+    let mercado_id = null
+    if (cnpj && nome_loja) {
+      const { data: mercado, error: errMercado } = await supabase
+        .from('mercados')
+        .upsert(
+          { user_id: nota.user_id, cnpj, nome_fantasia: nome_loja },
+          { onConflict: 'user_id,cnpj', ignoreDuplicates: false }
+        )
+        .select('id')
+        .single()
+
+      if (errMercado) {
+        return reply.code(500).send({ error: `Erro ao salvar mercado: ${errMercado.message}` })
+      }
+      mercado_id = mercado.id
+    }
+
+    const itensBrutos = itens.map(item => ({
+      nome_bruto: item.nome,
+      quantidade: item.qtd,
+      valor_unitario: item.valor_unit,
+      valor_total: item.valor_total,
+      unidade: item.unidade,
+    }))
+
+    const { error: errUpdate } = await supabase
+      .from('notas_fiscais')
+      .update({
+        nome_emitente: nome_loja,
+        cnpj_emitente: cnpj,
+        valor_total_nota: total,
+        data_emissao: parseDataEmissao(data_hora),
+        itens_brutos: itensBrutos,
+        mercado_id,
+        status: 'AGUARDANDO_VALIDACAO',
+      })
+      .eq('id', nota.id)
+
+    if (errUpdate) {
+      return reply.code(500).send({ error: `Erro ao atualizar nota: ${errUpdate.message}` })
+    }
+
+    return { ok: true, id_nota: nota.id }
+  })
+
   fastify.post('/notas/:id/confirmar', async (req, reply) => {
     const auth = req.headers.authorization || ''
     if (auth !== `Bearer ${process.env.API_TOKEN}`) {
@@ -113,6 +187,11 @@ export default async function notasRoutes(fastify) {
     // 2. Resolver mapeamentos para cada item
     const mapeamentoIds = []
     for (const item of itens) {
+      if (item.avulso) {
+        mapeamentoIds.push(null)
+        continue
+      }
+
       // 2a. Upsert tipo (tem UNIQUE user_id,nome)
       const { data: tipo, error: errTipo } = await supabase
         .from('tipos_item')
@@ -192,6 +271,7 @@ export default async function notasRoutes(fastify) {
     const itensRows = itens.map((item, i) => ({
       compra_id: compra.id,
       mapeamento_id: mapeamentoIds[i],
+      nome_bruto: item.nome_bruto,
       quantidade: item.quantidade,
       valor_unitario: item.valor_unitario,
       valor_total_item: item.valor_total,

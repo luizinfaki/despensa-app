@@ -12,7 +12,7 @@ Extraia todas as informações visíveis e retorne SOMENTE o JSON abaixo, sem te
   "cnpj": "CNPJ no formato XX.XXX.XXX/XXXX-XX ou null",
   "nome_loja": "nome do estabelecimento ou null",
   "chave_acesso": "44 dígitos no formato 'XXXX XXXX XXXX XXXX XXXX XXXX XXXX XXXX XXXX XXXX XXXX' ou null",
-  "itens": [{"nome": "string", "qtd": 1, "valor_unit": 0.00, "valor_total": 0.00}],
+  "itens": [{"nome": "string", "qtd": 1, "valor_unit": 0.00, "valor_total": 0.00, "unidade": "UN se vendido por unidade/embalagem, KG se vendido por peso"}],
   "total": 0.00,
   "data_hora": "DD/MM/YYYY HH:MM ou null"
 }

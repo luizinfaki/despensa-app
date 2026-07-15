@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>Despensa — Configurações</title>
+  <style>
+    body { font-family: sans-serif; font-size: 14px; padding: 20px; max-width: 420px; color: #222; }
+    h2 { margin: 0 0 20px; font-size: 16px; }
+    label { display: block; margin-bottom: 4px; font-weight: 600; }
+    input { width: 100%; box-sizing: border-box; padding: 7px 10px; border: 1px solid #ccc; border-radius: 5px; font-size: 14px; margin-bottom: 16px; }
+    button { background: #2ecc71; color: #fff; border: none; padding: 8px 18px; border-radius: 5px; cursor: pointer; font-size: 14px; }
+    #status { margin-top: 12px; font-size: 13px; color: #27ae60; min-height: 18px; }
+  </style>
+</head>
+<body>
+  <h2>Despensa — Configurações</h2>
+
+  <label for="apiUrl">URL do backend</label>
+  <input id="apiUrl" type="url" placeholder="http://localhost:3001">
+
+  <label for="apiToken">Token da API</label>
+  <input id="apiToken" type="password" placeholder="seu token aqui">
+
+  <button id="salvar">Salvar</button>
+  <div id="status"></div>
+
+  <script src="options.js"></script>
+</body>
+</html>

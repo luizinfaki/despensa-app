@@ -72,6 +72,18 @@ export default function HomePage() {
     }
 
     carregar()
+
+    const intervalId = setInterval(carregar, 15000)
+
+    function onVisibilityChange() {
+      if (document.visibilityState === 'visible') carregar()
+    }
+    document.addEventListener('visibilitychange', onVisibilityChange)
+
+    return () => {
+      clearInterval(intervalId)
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+    }
   }, [mes])
 
   function extrairChave(url: string): string | null {

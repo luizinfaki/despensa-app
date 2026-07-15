@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import AnexarFotoNota from '../components/AnexarFotoNota'
 
 type Nota = {
   id: number
@@ -12,6 +13,7 @@ type Nota = {
   nome_emitente: string | null
   cnpj_emitente: string | null
   url_sefaz: string | null
+  chave_acesso: string | null
   mercados: { nome_fantasia: string; descricao: string | null } | null
 }
 
@@ -35,19 +37,46 @@ function formatValor(v: number | null): string {
 export default function FilaNotasPage() {
   const [notas, setNotas] = useState<Nota[]>([])
   const [loading, setLoading] = useState(true)
+  const [notaFotoId, setNotaFotoId] = useState<number | null>(null)
   const navigate = useNavigate()
 
-  useEffect(() => {
+  function fetchNotas() {
     supabase
       .from('notas_fiscais')
-      .select('id, status, data_escaneamento, data_emissao, valor_total_nota, nome_emitente, cnpj_emitente, url_sefaz, mercados(nome_fantasia, descricao)')
+      .select('id, status, data_escaneamento, data_emissao, valor_total_nota, nome_emitente, cnpj_emitente, url_sefaz, chave_acesso, mercados(nome_fantasia, descricao)')
       .in('status', ['PENDENTE', 'AGUARDANDO_VALIDACAO'])
       .order('data_escaneamento', { ascending: false })
       .then(({ data }) => {
         setNotas((data as unknown as Nota[]) ?? [])
         setLoading(false)
       })
+  }
+
+  useEffect(() => {
+    fetchNotas()
+
+    const intervalId = setInterval(fetchNotas, 15000)
+
+    function onVisibilityChange() {
+      if (document.visibilityState === 'visible') fetchNotas()
+    }
+    document.addEventListener('visibilitychange', onVisibilityChange)
+
+    return () => {
+      clearInterval(intervalId)
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+    }
   }, [])
+
+  if (notaFotoId != null) {
+    return (
+      <AnexarFotoNota
+        notaId={notaFotoId}
+        onSuccess={() => { setNotaFotoId(null); fetchNotas() }}
+        onClose={() => setNotaFotoId(null)}
+      />
+    )
+  }
 
   if (loading) return <p style={styles.empty}>Carregando...</p>
 
@@ -77,17 +106,30 @@ export default function FilaNotasPage() {
               <span>{formatData(nota.data_emissao ?? nota.data_escaneamento)}</span>
               <span style={styles.valor}>{formatValor(nota.valor_total_nota)}</span>
             </div>
+            {nota.chave_acesso && (
+              <span style={styles.chave}>Chave: {nota.chave_acesso}</span>
+            )}
             {aguardando && <span style={styles.hint}>Toque para validar →</span>}
-            {!aguardando && nota.url_sefaz && (
-              <a
-                href={nota.url_sefaz}
-                target="_blank"
-                rel="noopener noreferrer"
-                style={styles.urlLink}
-                onClick={e => e.stopPropagation()}
-              >
-                Abrir nota na SEFAZ →
-              </a>
+            {!aguardando && (
+              <div style={styles.acoesPendente}>
+                {nota.url_sefaz && (
+                  <a
+                    href={nota.url_sefaz}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={styles.urlLink}
+                    onClick={e => e.stopPropagation()}
+                  >
+                    Abrir nota na SEFAZ →
+                  </a>
+                )}
+                <button
+                  style={styles.btnAnexarFoto}
+                  onClick={e => { e.stopPropagation(); setNotaFotoId(nota.id) }}
+                >
+                  Anexar foto
+                </button>
+              </div>
             )}
           </div>
         )
@@ -170,10 +212,31 @@ const styles: Record<string, CSSProperties> = {
     fontSize: '12px',
     color: '#16a34a',
   },
+  chave: {
+    fontSize: '11px',
+    color: '#9ca3af',
+    wordBreak: 'break-all',
+  },
   urlLink: {
     fontSize: '12px',
     color: '#2563eb',
     textDecoration: 'none',
     alignSelf: 'flex-start',
+  },
+  acoesPendente: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: '8px',
+  },
+  btnAnexarFoto: {
+    fontSize: '12px',
+    fontWeight: '600',
+    color: '#2563eb',
+    background: 'none',
+    border: '1px solid #bfdbfe',
+    borderRadius: '8px',
+    padding: '4px 10px',
+    cursor: 'pointer',
   },
 }
