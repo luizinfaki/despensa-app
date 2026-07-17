@@ -28,6 +28,10 @@ export default function AnexarFotoNota({ notaId, onSuccess, onClose }: Props) {
   const [error, setError] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
 
+  const totalCalculado = nota
+    ? Math.round(nota.itens.reduce((s, i) => s + i.valor_total, 0) * 100) / 100
+    : 0
+
   async function handleFileChange(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file) return
@@ -38,9 +42,9 @@ export default function AnexarFotoNota({ notaId, onSuccess, onClose }: Props) {
     try {
       const imageBase64 = await comprimirFotoParaBase64(file)
 
-      const resp = await fetch('/api/decode-qr', {
+      const resp = await fetch(`${API_URL}/notas/decode-foto`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${API_TOKEN}` },
         body: JSON.stringify({ imageBase64, mediaType: 'image/jpeg' }),
       })
 
@@ -55,6 +59,33 @@ export default function AnexarFotoNota({ notaId, onSuccess, onClose }: Props) {
     }
   }
 
+  function atualizarItem(i: number, campo: keyof NotaData['itens'][number], valor: string | number) {
+    setNota(prev => {
+      if (!prev) return prev
+      const itens = prev.itens.map((item, idx) => {
+        if (idx !== i) return item
+        const atualizado = { ...item, [campo]: valor }
+        if (campo === 'qtd' || campo === 'valor_unit') {
+          atualizado.valor_total = Math.round(atualizado.qtd * atualizado.valor_unit * 100) / 100
+        }
+        return atualizado
+      })
+      return { ...prev, itens }
+    })
+  }
+
+  function removerItem(i: number) {
+    setNota(prev => (prev ? { ...prev, itens: prev.itens.filter((_, idx) => idx !== i) } : prev))
+  }
+
+  function adicionarItem() {
+    setNota(prev =>
+      prev
+        ? { ...prev, itens: [...prev.itens, { nome: '', qtd: 1, valor_unit: 0, valor_total: 0, unidade: 'UN' }] }
+        : prev
+    )
+  }
+
   async function handleConfirmar() {
     if (!nota) return
     setState('saving')
@@ -64,7 +95,7 @@ export default function AnexarFotoNota({ notaId, onSuccess, onClose }: Props) {
       const resp = await fetch(`${API_URL}/notas/${notaId}/processar-foto`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${API_TOKEN}` },
-        body: JSON.stringify(nota),
+        body: JSON.stringify({ ...nota, total: totalCalculado }),
       })
 
       const json = await resp.json()
@@ -96,6 +127,8 @@ export default function AnexarFotoNota({ notaId, onSuccess, onClose }: Props) {
   }
 
   if ((state === 'preview' || state === 'saving') && nota) {
+    const podeConfirmar = nota.itens.length > 0 && nota.itens.every(item => item.nome.trim() !== '')
+
     return (
       <div style={styles.container}>
         <p style={styles.previewTitle}>Nota identificada</p>
@@ -105,30 +138,89 @@ export default function AnexarFotoNota({ notaId, onSuccess, onClose }: Props) {
           {nota.cnpj && <p style={styles.field}>CNPJ: {nota.cnpj}</p>}
           {nota.data_hora && <p style={styles.field}>Data: {nota.data_hora}</p>}
 
-          {nota.itens.length > 0 && (
-            <>
-              <p style={styles.sectionLabel}>Itens ({nota.itens.length})</p>
-              <div style={styles.itemList}>
-                {nota.itens.map((item, i) => (
-                  <div key={i} style={styles.itemRow}>
-                    <span style={styles.itemName}>{item.qtd}x {item.nome}</span>
-                    <span style={styles.itemPrice}>{fmt(item.valor_total)}</span>
+          <p style={styles.sectionLabel}>Itens ({nota.itens.length})</p>
+          <div style={styles.itemList}>
+            {nota.itens.map((item, i) => (
+              <div key={i} style={styles.itemCard}>
+                <div style={styles.itemCardTopo}>
+                  <div style={{ ...styles.campo, flex: 1 }}>
+                    <label style={styles.label}>Item</label>
+                    <input
+                      style={styles.itemInput}
+                      value={item.nome}
+                      placeholder="Nome do item"
+                      onChange={e => atualizarItem(i, 'nome', e.target.value)}
+                      disabled={state === 'saving'}
+                    />
                   </div>
-                ))}
+                  <button
+                    style={styles.btnRemover}
+                    onClick={() => removerItem(i)}
+                    disabled={state === 'saving'}
+                    title="Remover item"
+                  >
+                    ×
+                  </button>
+                </div>
+                <div style={styles.itemGrid}>
+                  <div style={styles.campo}>
+                    <label style={styles.label}>Qtd</label>
+                    <input
+                      style={styles.itemInput}
+                      type="number"
+                      value={item.qtd}
+                      onChange={e => atualizarItem(i, 'qtd', Number(e.target.value))}
+                      disabled={state === 'saving'}
+                    />
+                  </div>
+                  <div style={styles.campo}>
+                    <label style={styles.label}>Unidade</label>
+                    <input
+                      style={styles.itemInput}
+                      value={item.unidade}
+                      onChange={e => atualizarItem(i, 'unidade', e.target.value)}
+                      disabled={state === 'saving'}
+                    />
+                  </div>
+                  <div style={styles.campo}>
+                    <label style={styles.label}>Valor unit.</label>
+                    <input
+                      style={styles.itemInput}
+                      type="number"
+                      step="0.01"
+                      value={item.valor_unit}
+                      onChange={e => atualizarItem(i, 'valor_unit', Number(e.target.value))}
+                      disabled={state === 'saving'}
+                    />
+                  </div>
+                  <div style={styles.campo}>
+                    <label style={styles.label}>Valor total</label>
+                    <input
+                      style={styles.itemInput}
+                      type="number"
+                      step="0.01"
+                      value={item.valor_total}
+                      onChange={e => atualizarItem(i, 'valor_total', Number(e.target.value))}
+                      disabled={state === 'saving'}
+                    />
+                  </div>
+                </div>
               </div>
-            </>
-          )}
+            ))}
+          </div>
 
-          {nota.total != null && (
-            <p style={styles.totalRow}>Total: {fmt(nota.total)}</p>
-          )}
+          <button style={styles.btnAdicionar} onClick={adicionarItem} disabled={state === 'saving'}>
+            + Adicionar item
+          </button>
+
+          <p style={styles.totalRow}>Total: {fmt(totalCalculado)}</p>
         </div>
 
         {error && <p style={styles.error}>{error}</p>}
 
         <button
-          style={{ ...styles.saveButton, opacity: state === 'saving' ? 0.6 : 1 }}
-          disabled={state === 'saving'}
+          style={{ ...styles.saveButton, opacity: podeConfirmar && state !== 'saving' ? 1 : 0.6 }}
+          disabled={!podeConfirmar || state === 'saving'}
           onClick={handleConfirmar}
         >
           {state === 'saving' ? 'Enviando...' : 'Confirmar e enviar para validação'}
@@ -255,21 +347,66 @@ const styles: Record<string, CSSProperties> = {
     flexDirection: 'column',
     gap: '4px',
   },
-  itemRow: {
+  itemCard: {
     display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'baseline',
+    flexDirection: 'column',
+    gap: '6px',
+    background: '#fff',
+    border: '1px solid #e5e7eb',
+    borderRadius: '8px',
+    padding: '8px',
+  },
+  itemCardTopo: {
+    display: 'flex',
+    alignItems: 'flex-end',
+    gap: '6px',
+  },
+  itemGrid: {
+    display: 'grid',
+    gridTemplateColumns: '1fr 1fr',
     gap: '8px',
   },
-  itemName: {
-    fontSize: '13px',
-    color: '#374151',
-    flex: 1,
+  campo: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '2px',
+    minWidth: 0,
   },
-  itemPrice: {
+  label: {
+    fontSize: '11px',
+    color: '#6b7280',
+    fontWeight: '600',
+  },
+  itemInput: {
+    width: '100%',
+    boxSizing: 'border-box',
+    border: '1px solid #d1d5db',
+    borderRadius: '6px',
+    padding: '6px 8px',
     fontSize: '13px',
     color: '#374151',
-    whiteSpace: 'nowrap',
+  },
+  btnRemover: {
+    flexShrink: 0,
+    background: '#fef2f2',
+    color: '#dc2626',
+    border: '1px solid #fecaca',
+    borderRadius: '6px',
+    width: '28px',
+    height: '28px',
+    fontSize: '16px',
+    lineHeight: '1',
+    cursor: 'pointer',
+  },
+  btnAdicionar: {
+    alignSelf: 'flex-start',
+    background: 'none',
+    border: 'none',
+    color: '#2563eb',
+    fontSize: '13px',
+    fontWeight: '600',
+    cursor: 'pointer',
+    padding: '4px 0',
   },
   totalRow: {
     margin: '8px 0 0',

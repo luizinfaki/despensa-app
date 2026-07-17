@@ -1,7 +1,9 @@
 import { useRef, useState } from 'react'
 import type { CSSProperties, ChangeEvent } from 'react'
-import { supabase } from '../lib/supabase'
 import { comprimirFotoParaBase64 } from '../lib/foto'
+
+const API_URL = import.meta.env.VITE_BACKEND_URL ?? 'http://localhost:3000'
+const API_TOKEN = import.meta.env.VITE_API_TOKEN ?? ''
 
 interface NotaData {
   cnpj: string | null
@@ -49,14 +51,9 @@ export default function QrScannerPhoto({ onScan, onClose }: Props) {
     try {
       const imageBase64 = await comprimirFotoParaBase64(file)
 
-      const { data: { session } } = await supabase.auth.getSession()
-
-      const resp = await fetch('/api/decode-qr', {
+      const resp = await fetch(`${API_URL}/notas/decode-foto`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
-        },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${API_TOKEN}` },
         body: JSON.stringify({ imageBase64, mediaType: 'image/jpeg' }),
       })
 
