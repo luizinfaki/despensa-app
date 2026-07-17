@@ -6,6 +6,40 @@ import { supabase } from '../lib/supabase'
 const API_URL = import.meta.env.VITE_BACKEND_URL ?? 'http://localhost:3000'
 const API_TOKEN = import.meta.env.VITE_API_TOKEN ?? ''
 
+const chWidth = (v: string | number) => `${Math.max(2, String(v).length + 1)}ch`
+
+function CampoInline({ value, editing, tipo = 'text', style, disabled, onStartEdit, onChange, onStopEdit }: {
+  value: string | number
+  editing: boolean
+  tipo?: 'text' | 'number'
+  style?: CSSProperties
+  disabled?: boolean
+  onStartEdit: () => void
+  onChange: (v: string) => void
+  onStopEdit: () => void
+}) {
+  if (editing && !disabled) {
+    return (
+      <input
+        autoFocus
+        type={tipo}
+        step={tipo === 'number' ? '0.01' : undefined}
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        onFocus={e => e.target.select()}
+        onBlur={onStopEdit}
+        onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur() }}
+        style={{ font: 'inherit', color: 'inherit', border: 'none', background: 'transparent', outline: 'none', padding: 0, width: chWidth(value), ...style }}
+      />
+    )
+  }
+  return (
+    <span onClick={disabled ? undefined : onStartEdit} style={{ ...(disabled ? {} : { cursor: 'pointer' }), ...style }}>
+      {value}
+    </span>
+  )
+}
+
 type ItemBruto = {
   nome_bruto: string
   quantidade: number
@@ -77,6 +111,8 @@ export default function ValidacaoNotaPage() {
   const [tiposDisponiveis, setTiposDisponiveis] = useState<string[]>([])
   const [dropdownIdx, setDropdownIdx] = useState<number | null>(null)
   const [hoveredTipo, setHoveredTipo] = useState<string | null>(null)
+  const [campoAtivo, setCampoAtivo] = useState<{ i: number; campo: string } | null>(null)
+  const emEdicao = (i: number, campo: string) => campoAtivo?.i === i && campoAtivo?.campo === campo
 
   useEffect(() => {
     supabase.from('tipos_item').select('nome').order('nome').then(({ data }) => {
@@ -115,16 +151,23 @@ export default function ValidacaoNotaPage() {
       })
   }, [id])
 
-  const CAMPOS_SYNC: (keyof ItemValidacao)[] = ['tipo', 'marca', 'peso_volume', 'unidade_mapeada', 'tags', 'avulso']
+  const CAMPOS_SYNC: (keyof ItemValidacao)[] = ['nome_bruto', 'tipo', 'marca', 'peso_volume', 'unidade_mapeada', 'tags', 'avulso']
 
-  function atualizar(i: number, campo: keyof ItemValidacao, valor: string | string[] | boolean) {
+  function atualizar(i: number, campo: keyof ItemValidacao, valor: string | string[] | boolean | number) {
     const nomeBruto = itens[i]?.nome_bruto
     if (CAMPOS_SYNC.includes(campo) && nomeBruto) {
       setItens(prev => prev.map(item =>
         item.nome_bruto === nomeBruto ? { ...item, [campo]: valor } : item
       ))
     } else {
-      setItens(prev => prev.map((item, idx) => idx === i ? { ...item, [campo]: valor } : item))
+      setItens(prev => prev.map((item, idx) => {
+        if (idx !== i) return item
+        const atualizado = { ...item, [campo]: valor }
+        if (campo === 'quantidade' || campo === 'valor_unitario') {
+          atualizado.valor_total = Math.round(atualizado.quantidade * atualizado.valor_unitario * 100) / 100
+        }
+        return atualizado
+      }))
     }
   }
 
@@ -176,7 +219,7 @@ export default function ValidacaoNotaPage() {
   const mercado = nota.mercados?.descricao ?? nota.mercados?.nome_fantasia ?? nota.nome_emitente ?? '—'
   const data = nota.data_emissao ? new Date(nota.data_emissao).toLocaleDateString('pt-BR') : '—'
   const total = nota.valor_total_nota?.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) ?? '—'
-  const todosOk = itens.every(i => !i.carregando && (i.avulso || i.tipo.trim()))
+  const todosOk = itens.every(i => !i.carregando && (i.avulso || i.tipo.trim()) && i.nome_bruto.trim())
 
   return (
     <div style={styles.container}>
@@ -190,87 +233,142 @@ export default function ValidacaoNotaPage() {
 
       <div style={styles.lista}>
         {itens.map((item, i) => (
-          <div key={item.nome_bruto + i} style={item.avulso ? { ...styles.card, ...styles.cardAvulso } : styles.card}>
+          <div key={i} style={item.avulso ? { ...styles.card, ...styles.cardAvulso } : styles.card}>
             <div style={styles.cardTopo}>
-              <span style={styles.nomeBruto}>{item.nome_bruto}</span>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
-                <span style={styles.qtdValor}>
-                  {item.quantidade} {item.unidade} · {item.valor_total.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                </span>
-                <button
-                  style={item.avulso ? { ...styles.iconAvulso, ...styles.iconAvulsoAtivo } : styles.iconAvulso}
-                  onClick={() => atualizar(i, 'avulso', !item.avulso)}
-                  title={item.avulso ? 'Desfazer avulso' : 'Marcar como avulso'}
-                >
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/>
-                    <line x1="7" y1="7" x2="7.01" y2="7"/>
-                    {item.avulso && <line x1="3" y1="3" x2="21" y2="21"/>}
-                  </svg>
-                </button>
-              </div>
+              <CampoInline
+                value={item.nome_bruto}
+                editing={emEdicao(i, 'nome_bruto')}
+                style={styles.nomeBruto}
+                disabled={!item.editando}
+                onStartEdit={() => setCampoAtivo({ i, campo: 'nome_bruto' })}
+                onChange={v => atualizar(i, 'nome_bruto', v)}
+                onStopEdit={() => setCampoAtivo(null)}
+              />
+              <button
+                style={item.avulso ? { ...styles.iconAvulso, ...styles.iconAvulsoAtivo } : styles.iconAvulso}
+                onClick={() => atualizar(i, 'avulso', !item.avulso)}
+                title={item.avulso ? 'Desfazer avulso' : 'Marcar como avulso'}
+              >
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/>
+                  <line x1="7" y1="7" x2="7.01" y2="7"/>
+                  {item.avulso && <line x1="3" y1="3" x2="21" y2="21"/>}
+                </svg>
+              </button>
             </div>
 
-            {!item.avulso && (item.carregando ? (
+            <div style={styles.linhaValores}>
+              <CampoInline
+                value={item.quantidade}
+                editing={emEdicao(i, 'quantidade')}
+                tipo="number"
+                disabled={!item.editando}
+                onStartEdit={() => setCampoAtivo({ i, campo: 'quantidade' })}
+                onChange={v => atualizar(i, 'quantidade', Number(v))}
+                onStopEdit={() => setCampoAtivo(null)}
+              />
+              {' '}
+              <CampoInline
+                value={item.unidade}
+                editing={emEdicao(i, 'unidade')}
+                disabled={!item.editando}
+                onStartEdit={() => setCampoAtivo({ i, campo: 'unidade' })}
+                onChange={v => atualizar(i, 'unidade', v)}
+                onStopEdit={() => setCampoAtivo(null)}
+              />
+              {' · R$ '}
+              <CampoInline
+                value={item.valor_unitario}
+                editing={emEdicao(i, 'valor_unitario')}
+                tipo="number"
+                disabled={!item.editando}
+                onStartEdit={() => setCampoAtivo({ i, campo: 'valor_unitario' })}
+                onChange={v => atualizar(i, 'valor_unitario', Number(v))}
+                onStopEdit={() => setCampoAtivo(null)}
+              />
+              {'/un · R$ '}
+              <CampoInline
+                value={item.valor_total}
+                editing={emEdicao(i, 'valor_total')}
+                tipo="number"
+                style={styles.destaque}
+                disabled={!item.editando}
+                onStartEdit={() => setCampoAtivo({ i, campo: 'valor_total' })}
+                onChange={v => atualizar(i, 'valor_total', Number(v))}
+                onStopEdit={() => setCampoAtivo(null)}
+              />
+            </div>
+
+            {!item.avulso && item.carregando ? (
               <span style={styles.classificando}>Classificando...</span>
             ) : !item.editando ? (
               <div style={styles.mapeamentoRow} onClick={() => atualizar(i, 'editando', true)}>
-                {item.ja_mapeado
-                  ? <span style={styles.checkmark}>✓</span>
-                  : <span style={styles.iaIcon}>IA</span>
-                }
-                <span style={styles.mapeamentoTexto}>
-                  {item.tipo}{item.marca ? ` · ${item.marca}` : ''}{item.peso_volume ? ` · ${item.peso_volume}` : ''}
-                </span>
-                <span style={styles.editar}>editar</span>
+                {item.avulso ? (
+                  <span style={styles.editar}>editar</span>
+                ) : (
+                  <>
+                    {item.ja_mapeado
+                      ? <span style={styles.checkmark}>✓</span>
+                      : <span style={styles.iaIcon}>IA</span>
+                    }
+                    <span style={styles.mapeamentoTexto}>
+                      {item.tipo}{item.marca ? ` · ${item.marca}` : ''}{item.peso_volume ? ` · ${item.peso_volume}` : ''}
+                    </span>
+                    <span style={styles.editar}>editar</span>
+                  </>
+                )}
               </div>
             ) : (
               <div style={styles.form}>
-                <label style={styles.label}>Tipo *</label>
-                <div style={{ position: 'relative' }}>
-                  <input
-                    style={styles.input}
-                    value={item.tipo}
-                    onChange={e => atualizar(i, 'tipo', e.target.value)}
-                    onFocus={() => setDropdownIdx(i)}
-                    onBlur={() => setTimeout(() => setDropdownIdx(null), 150)}
-                    placeholder="ex: Café Moído"
-                  />
-                  {dropdownIdx === i && (() => {
-                    const filtrados = tiposDisponiveis.filter(t =>
-                      t.toLowerCase().includes(item.tipo.toLowerCase().trim()) && t !== item.tipo
-                    )
-                    return filtrados.length > 0 ? (
-                      <div style={styles.dropdown}>
-                        {filtrados.map(t => (
-                          <div
-                            key={t}
-                            style={{ ...styles.dropdownItem, background: hoveredTipo === t ? '#f3f4f6' : '#fff' }}
-                            onMouseDown={() => { atualizar(i, 'tipo', t); setDropdownIdx(null) }}
-                            onMouseEnter={() => setHoveredTipo(t)}
-                            onMouseLeave={() => setHoveredTipo(null)}
-                          >
-                            {t}
+                {!item.avulso && (
+                  <>
+                    <label style={styles.label}>Tipo *</label>
+                    <div style={{ position: 'relative' }}>
+                      <input
+                        style={styles.input}
+                        value={item.tipo}
+                        onChange={e => atualizar(i, 'tipo', e.target.value)}
+                        onFocus={() => setDropdownIdx(i)}
+                        onBlur={() => setTimeout(() => setDropdownIdx(null), 150)}
+                        placeholder="ex: Café Moído"
+                      />
+                      {dropdownIdx === i && (() => {
+                        const filtrados = tiposDisponiveis.filter(t =>
+                          t.toLowerCase().includes(item.tipo.toLowerCase().trim()) && t !== item.tipo
+                        )
+                        return filtrados.length > 0 ? (
+                          <div style={styles.dropdown}>
+                            {filtrados.map(t => (
+                              <div
+                                key={t}
+                                style={{ ...styles.dropdownItem, background: hoveredTipo === t ? '#f3f4f6' : '#fff' }}
+                                onMouseDown={() => { atualizar(i, 'tipo', t); setDropdownIdx(null) }}
+                                onMouseEnter={() => setHoveredTipo(t)}
+                                onMouseLeave={() => setHoveredTipo(null)}
+                              >
+                                {t}
+                              </div>
+                            ))}
                           </div>
-                        ))}
-                      </div>
-                    ) : null
-                  })()}
-                </div>
-                <label style={styles.label}>Marca</label>
-                <input style={styles.input} value={item.marca} onChange={e => atualizar(i, 'marca', e.target.value)} placeholder="ex: Pilão" />
-                <label style={styles.label}>Peso/Volume</label>
-                <input style={styles.input} value={item.peso_volume} onChange={e => atualizar(i, 'peso_volume', e.target.value)} placeholder="ex: 500g" />
-                <label style={styles.label}>Tags (separadas por vírgula)</label>
-                <input
-                  style={styles.input}
-                  value={item.tags.join(', ')}
-                  onChange={e => atualizar(i, 'tags', e.target.value.split(',').map(t => t.trim()).filter(Boolean) as any)}
-                  placeholder="ex: Alimentação, Matinal"
-                />
+                        ) : null
+                      })()}
+                    </div>
+                    <label style={styles.label}>Marca</label>
+                    <input style={styles.input} value={item.marca} onChange={e => atualizar(i, 'marca', e.target.value)} placeholder="ex: Pilão" />
+                    <label style={styles.label}>Peso/Volume</label>
+                    <input style={styles.input} value={item.peso_volume} onChange={e => atualizar(i, 'peso_volume', e.target.value)} placeholder="ex: 500g" />
+                    <label style={styles.label}>Tags (separadas por vírgula)</label>
+                    <input
+                      style={styles.input}
+                      value={item.tags.join(', ')}
+                      onChange={e => atualizar(i, 'tags', e.target.value.split(',').map(t => t.trim()).filter(Boolean) as any)}
+                      placeholder="ex: Alimentação, Matinal"
+                    />
+                  </>
+                )}
                 <button style={styles.btnOk} onClick={() => atualizar(i, 'editando', false)}>OK</button>
               </div>
-            ))}
+            )}
           </div>
         ))}
       </div>
@@ -299,7 +397,8 @@ const styles: Record<string, CSSProperties> = {
   card: { background: '#fff', border: '1px solid #e5e7eb', borderRadius: '10px', padding: '12px', display: 'flex', flexDirection: 'column', gap: '8px' },
   cardTopo: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' },
   nomeBruto: { fontSize: '13px', fontWeight: '600', color: '#111827', flex: 1 },
-  qtdValor: { fontSize: '12px', color: '#6b7280', whiteSpace: 'nowrap' },
+  linhaValores: { fontSize: '12px', color: '#6b7280' },
+  destaque: { color: '#374151', fontWeight: '600' },
   classificando: { fontSize: '12px', color: '#9ca3af', fontStyle: 'italic' },
   mapeamentoRow: { display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' },
   checkmark: { color: '#16a34a', fontSize: '14px', fontWeight: '700' },
