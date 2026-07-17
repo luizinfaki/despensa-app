@@ -49,10 +49,12 @@ There is no automated test suite in this repo currently.
 
 `mapeamento_produtos` (`user_id` + `nome_bruto` UNIQUE) is a cache from raw receipt item text to a normalized `produtos` row. New raw names get an AI classification (backend `/produtos/mapear`); once mapped, future purchases of the same raw text skip the AI call entirely. Retroactively editing a mapping is intended to affect all linked purchases (see PRD Sprint 7, not yet built).
 
-### Two independent AI integrations
+### Two AI integrations, same backend
 
-- `backend/src/routes/produtos.js` — text-only classification of a raw item name into `{tipo, marca, peso_volume, unidade, tags}` via Claude Haiku, used during validation.
-- `frontend/api/decode-qr.ts` — a separate Vercel serverless function using Claude vision to read a photographed nota/QR code when live QR scanning fails. Unrelated code path from the backend classifier; don't conflate the two when changing prompts or models.
+Both live in `backend`, sharing the lazy-singleton Anthropic client from `backend/src/plugins/anthropic.js` (mirrors `plugins/supabase.js`), but keep distinct prompts/purposes — don't conflate the two when changing prompts or models.
+
+- `backend/src/routes/produtos.js` (`POST /produtos/mapear`) — text-only classification of a raw item name into `{tipo, marca, peso_volume, unidade, tags}` via Claude Haiku, used during validation.
+- `backend/src/routes/notas.js` (`POST /notas/decode-foto`) — Claude vision reading a photographed nota/QR code when live QR scanning fails (`AnexarFotoNota`, `QrScannerPhoto`). Needs a raised Fastify `bodyLimit` (base64-encoded photos exceed the 1MB default).
 
 ### Auth model asymmetry
 

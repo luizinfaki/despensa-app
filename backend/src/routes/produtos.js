@@ -1,6 +1,4 @@
-import Anthropic from '@anthropic-ai/sdk'
-
-const anthropic = new Anthropic()
+import { getAnthropic } from '../plugins/anthropic.js'
 
 const PROMPT = `Você é um classificador de produtos de supermercado brasileiro.
 Dado o nome bruto de um item de nota fiscal, retorne SOMENTE o JSON abaixo sem texto adicional:
@@ -27,6 +25,7 @@ export default async function produtosRoutes(fastify) {
       return reply.code(400).send({ error: 'nome_bruto é obrigatório' })
     }
 
+    const anthropic = getAnthropic()
     const message = await anthropic.messages.create({
       model: 'claude-haiku-4-5-20251001',
       max_tokens: 256,

@@ -1,4 +1,20 @@
 import { getSupabase } from '../plugins/supabase.js'
+import { getAnthropic } from '../plugins/anthropic.js'
+
+const PROMPT_DECODE_FOTO = `Analise esta nota fiscal de consumidor eletrônica (NFC-e) brasileira.
+Extraia todas as informações visíveis e retorne SOMENTE o JSON abaixo, sem texto adicional:
+
+{
+  "cnpj": "CNPJ no formato XX.XXX.XXX/XXXX-XX ou null",
+  "nome_loja": "nome do estabelecimento ou null",
+  "chave_acesso": "44 dígitos no formato 'XXXX XXXX XXXX XXXX XXXX XXXX XXXX XXXX XXXX XXXX XXXX' ou null",
+  "itens": [{"nome": "string", "qtd": 1, "valor_unit": 0.00, "valor_total": 0.00, "unidade": "UN se vendido por unidade/embalagem, KG se vendido por peso"}],
+  "total": 0.00,
+  "data_hora": "DD/MM/YYYY HH:MM ou null"
+}
+
+A chave de acesso tem 44 dígitos divididos em grupos de 4, impressa próximo ao QR code ou código de barras.
+Retorne APENAS o JSON, sem explicações adicionais, em uma única linha e sem espaços/indentação desnecessários.`
 
 function parseDataEmissao(str) {
   // "18/06/2026 19:04:40" → ISO string
@@ -156,6 +172,45 @@ export default async function notasRoutes(fastify) {
     }
 
     return { ok: true, id_nota: nota.id }
+  })
+
+  fastify.post('/notas/decode-foto', { bodyLimit: 10 * 1024 * 1024 }, async (req, reply) => {
+    const auth = req.headers.authorization || ''
+    if (auth !== `Bearer ${process.env.API_TOKEN}`) {
+      return reply.code(401).send({ error: 'Token inválido' })
+    }
+
+    const { imageBase64, mediaType = 'image/jpeg' } = req.body ?? {}
+    if (!imageBase64) {
+      return reply.code(400).send({ error: 'imageBase64 é obrigatório' })
+    }
+
+    const anthropic = getAnthropic()
+    const message = await anthropic.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 4096,
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'image', source: { type: 'base64', media_type: mediaType, data: imageBase64 } },
+            { type: 'text', text: PROMPT_DECODE_FOTO },
+          ],
+        },
+      ],
+    })
+
+    const text = message.content[0]?.type === 'text' ? message.content[0].text : ''
+    const match = text.match(/\{[\s\S]*\}/)
+    if (!match) {
+      return reply.code(422).send({ error: 'Não foi possível extrair dados da imagem' })
+    }
+
+    try {
+      return JSON.parse(match[0])
+    } catch {
+      return reply.code(422).send({ error: 'Não foi possível interpretar a nota — tente novamente ou tire uma foto com menos itens visíveis por vez' })
+    }
   })
 
   fastify.post('/notas/:id/confirmar', async (req, reply) => {
